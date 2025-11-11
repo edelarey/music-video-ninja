@@ -70,10 +70,37 @@ const handleRender = async () => {
       renderStatus.value = 'Loading FFmpeg...'
     })
 
-    // Process video
+    // --- Robust Clip Adjustment Logic ---
+    // 1. Sort clips to ensure correct order
+    const sortedClips = [...store.clips].sort((a, b) => a.start - b.start)
+
+    // 2. Calculate total duration of user-defined clip segments
+    const totalUserDuration = sortedClips.reduce((sum, clip) => sum + (clip.end - clip.start), 0)
+
+    // 3. Determine the scaling factor to fit the audio duration
+    const scalingFactor = store.mp3Duration / totalUserDuration
+
+    // 4. Create a new, perfectly contiguous timeline
+    let currentTime = 0
+    const adjustedClips = sortedClips.map(clip => {
+      const originalSegmentDuration = clip.end - clip.start
+      const newSegmentDuration = originalSegmentDuration * scalingFactor
+      
+      const newClip = {
+        ...clip,
+        start: currentTime,
+        end: currentTime + newSegmentDuration,
+      }
+      
+      currentTime += newSegmentDuration
+      return newClip
+    })
+    // --- End of Adjustment Logic ---
+
+    // Process video with the perfectly adjusted clips
     const blob = await ffmpegService.processVideo(
       store.mp3File,
-      store.clips,
+      adjustedClips,
       store.mp3Duration,
       (progress, status) => {
         store.setRenderProgress(progress)
