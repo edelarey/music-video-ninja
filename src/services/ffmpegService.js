@@ -63,6 +63,8 @@ class FFmpegService {
       throw new Error('FFmpeg not loaded')
     }
 
+    const filesToClean = new Set(['audio.mp3', 'filelist.txt', 'stitched.mp4', 'final_output.mp4']);
+
     try {
       // Write MP3 to FFmpeg filesystem
       if (onStatusUpdate) onStatusUpdate('Loading audio file...')
@@ -76,51 +78,50 @@ class FFmpegService {
         if (!clip) continue
 
         const segmentDuration = clip.end - clip.start
+        const sourceClipName = `source_clip_${i}.mp4`;
+        const processedClipName = `processed_clip_${i}.mp4`;
+        const loopListName = `looplist_${i}.txt`;
+        const tempClipName = `temp_${i}.mp4`;
+
+        filesToClean.add(sourceClipName).add(processedClipName).add(loopListName).add(tempClipName);
 
         // Write original clip to filesystem
         const clipData = new Uint8Array(await clip.file.arrayBuffer())
-        await this.ffmpeg.writeFile(`source_clip_${i}.mp4`, clipData)
+        await this.ffmpeg.writeFile(sourceClipName, clipData)
 
         // --- Definitive Strategy: Isolate Intensive Operations ---
 
-        // 1. Pre-process: Scale and mute the *short* source clip. This re-encodes
-        //    for a very short duration, which is memory-safe.
+        // 1. Pre-process: Scale and mute the *short* source clip.
         if (onStatusUpdate) onStatusUpdate(`Pre-processing clip ${i + 1}...`)
         await this.ffmpeg.exec([
-          '-i', `source_clip_${i}.mp4`,
-          '-an', // Mute audio
+          '-i', sourceClipName,
+          '-an',
           '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p',
           '-c:v', 'libx264',
-          '-preset', 'ultrafast', // Use ultrafast to speed up this intermediate step
+          '-preset', 'ultrafast',
           '-crf', '23',
-          `processed_clip_${i}.mp4`
+          processedClipName
         ])
-        await this.ffmpeg.deleteFile(`source_clip_${i}.mp4`)
 
         // 2. Loop: Use the pre-processed clip with the efficient concat demuxer.
-        //    This step now only stream-copies, making it extremely fast and light.
         if (onStatusUpdate) onStatusUpdate(`Looping clip ${i + 1}...`)
         const clipDuration = clip.duration
         const loopCount = Math.ceil(segmentDuration / clipDuration)
         let loopListContent = ''
         for (let j = 0; j < loopCount; j++) {
-          loopListContent += `file 'processed_clip_${i}.mp4'\n`
+          loopListContent += `file '${processedClipName}'\n`
         }
-        await this.ffmpeg.writeFile(`looplist_${i}.txt`, new TextEncoder().encode(loopListContent))
+        await this.ffmpeg.writeFile(loopListName, new TextEncoder().encode(loopListContent))
 
         // 3. Final Segment: Create the final segment by stream-copying and trimming.
         await this.ffmpeg.exec([
           '-f', 'concat',
           '-safe', '0',
-          '-i', `looplist_${i}.txt`,
+          '-i', loopListName,
           '-t', segmentDuration.toString(),
-          '-c', 'copy', // Use stream copy - NO re-encoding!
-          `temp_${i}.mp4`
+          '-c', 'copy',
+          tempClipName
         ])
-
-        // Clean up intermediate files
-        await this.ffmpeg.deleteFile(`processed_clip_${i}.mp4`)
-        await this.ffmpeg.deleteFile(`looplist_${i}.txt`)
       }
 
       // Step 2: Create concat file list
@@ -129,10 +130,7 @@ class FFmpegService {
       for (let i = 0; i < clips.length; i++) {
         fileListContent += `file 'temp_${i}.mp4'\n`
       }
-      await this.ffmpeg.writeFile(
-        'filelist.txt',
-        new TextEncoder().encode(fileListContent)
-      )
+      await this.ffmpeg.writeFile('filelist.txt', new TextEncoder().encode(fileListContent))
 
       // Concatenate all clips
       await this.ffmpeg.exec([
@@ -143,13 +141,7 @@ class FFmpegService {
         'stitched.mp4'
       ])
 
-      // Clean up temp files
-      for (let i = 0; i < clips.length; i++) {
-        await this.ffmpeg.deleteFile(`temp_${i}.mp4`)
-      }
-      await this.ffmpeg.deleteFile('filelist.txt')
-
-      // Step 3: Mux with MP3 audio (skip cover art, use only audio stream)
+      // Step 3: Mux with MP3 audio
       if (onStatusUpdate) onStatusUpdate('Adding audio track...')
       await this.ffmpeg.exec([
         '-i', 'stitched.mp4',
@@ -164,14 +156,9 @@ class FFmpegService {
         'final_output.mp4'
       ])
 
-      // Clean up intermediate files
-      await this.ffmpeg.deleteFile('stitched.mp4')
-      await this.ffmpeg.deleteFile('audio.mp3')
-
       // Read final output
       if (onStatusUpdate) onStatusUpdate('Finalizing...')
       const data = await this.ffmpeg.readFile('final_output.mp4')
-      await this.ffmpeg.deleteFile('final_output.mp4')
 
       if (onStatusUpdate) onStatusUpdate('Complete!')
 
@@ -180,6 +167,19 @@ class FFmpegService {
     } catch (error) {
       console.error('FFmpeg processing error:', error)
       throw error
+    } finally {
+      // --- Guaranteed Cleanup ---
+      // This block runs whether the process succeeds or fails, ensuring
+      // the virtual filesystem is always left clean.
+      if (onStatusUpdate) onStatusUpdate('Cleaning up virtual files...')
+      for (const fileName of filesToClean) {
+        try {
+          await this.ffmpeg.deleteFile(fileName)
+        } catch (e) {
+          // Ignore errors for files that might not have been created
+        }
+      }
+      if (onStatusUpdate) onStatusUpdate('Cleanup complete.')
     }
   }
 
