@@ -7,7 +7,13 @@ export interface VideoClip {
   start: number
   end: number
   duration: number
+  color: string
 }
+
+const CLIP_COLORS = [
+  '#ff6b6b', '#4ecdc4', '#45b7d1', '#f9ca24', '#6c5ce7',
+  '#a29bfe', '#fd79a8', '#fdcb6e', '#00b894', '#e17055'
+]
 
 export const useEditorStore = defineStore('editor', () => {
   // State
@@ -32,12 +38,14 @@ export const useEditorStore = defineStore('editor', () => {
   }
 
   function addClip(file: File, start: number, end: number) {
+    const newClipColor = CLIP_COLORS[clips.value.length % CLIP_COLORS.length] || '#cccccc'
     const clip: VideoClip = {
       id: crypto.randomUUID(),
       file,
       start,
       end,
-      duration: 0 // Will be set after video metadata loads
+      duration: 0, // Will be set after video metadata loads
+      color: newClipColor
     }
     clips.value.push(clip)
   }

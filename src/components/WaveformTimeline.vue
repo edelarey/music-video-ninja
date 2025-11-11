@@ -66,10 +66,6 @@ const isPlaying = ref(false)
 const currentTime = ref(0)
 const volume = ref(80)
 
-const colors = [
-  '#ff6b6b', '#4ecdc4', '#45b7d1', '#f9ca24', '#6c5ce7',
-  '#a29bfe', '#fd79a8', '#fdcb6e', '#00b894', '#e17055'
-]
 
 const initWavesurfer = () => {
   if (!waveformRef.value || !store.mp3File) return
@@ -155,12 +151,12 @@ const updateRegions = () => {
   regionsPlugin.clearRegions()
 
   // Add regions for each clip
-  store.clips.forEach((clip, index) => {
+  store.clips.forEach(clip => {
     regionsPlugin?.addRegion({
       id: clip.id,
       start: clip.start,
       end: clip.end,
-      color: colors[index % colors.length] + '40',
+      color: clip.color + '40', // Use the color from the store with some transparency
       drag: true,
       resize: true
     })

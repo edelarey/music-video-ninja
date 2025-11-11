@@ -28,12 +28,7 @@
     <div v-if="store.clips.length > 0" class="clips-list">
       <h3>Uploaded Clips ({{ store.clips.length }})</h3>
       <div class="clip-item" v-for="clip in store.clips" :key="clip.id">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
-          <line x1="7" y1="2" x2="7" y2="22"></line>
-          <line x1="17" y1="2" x2="17" y2="22"></line>
-          <line x1="2" y1="12" x2="22" y2="12"></line>
-        </svg>
+        <div class="color-swatch" :style="{ backgroundColor: clip.color }"></div>
         <div class="clip-info">
           <p class="filename">{{ clip.file.name }}</p>
           <p class="details">
@@ -188,9 +183,12 @@ const formatDuration = (seconds: number): string => {
   background: rgba(66, 184, 131, 0.1);
 }
 
-.clip-item svg {
-  color: #42b883;
+.color-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
   flex-shrink: 0;
+  border: 1px solid rgba(0,0,0,0.1);
 }
 
 .clip-info {
