@@ -52,7 +52,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useEditorStore } from '../stores/editor'
-import { ffmpegService } from '../services/ffmpegService'
+import { ffmpegService } from '../services/ffmpegService.js'
 
 const store = useEditorStore()
 const renderStatus = ref('Preparing...')

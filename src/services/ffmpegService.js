@@ -1,15 +1,13 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { toBlobURL } from '@ffmpeg/util'
-import type { VideoClip } from '../stores/editor'
-
 class FFmpegService {
-  private ffmpeg: FFmpeg | null = null
-  private loaded = false
-
-  async load(onProgress?: (progress: number) => void): Promise<void> {
-    if (this.loaded) return
-
+  constructor() {
     this.ffmpeg = new FFmpeg()
+    this.loaded = false
+  }
+
+  async load(onProgress) {
+    if (this.loaded) return
 
     this.ffmpeg.on('log', ({ message }) => {
       console.log('[FFmpeg]', message)
@@ -21,41 +19,49 @@ class FFmpegService {
       }
     })
 
-    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd'
-    
-    await this.ffmpeg.load({
-      coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-      wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-    })
+    console.log('Loading FFmpeg with @ffmpeg/core-mt...')
+
+    try {
+      const baseURL = 'https://unpkg.com/@ffmpeg/core-mt@0.12.6/dist/esm'
+      await this.ffmpeg.load({
+        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+        workerURL: await toBlobURL(`${baseURL}/ffmpeg-core.worker.js`, 'text/javascript'),
+      })
+      console.log('FFmpeg loaded successfully!')
+    } catch (error) {
+      console.error('Error loading FFmpeg:', error)
+      throw error
+    }
 
     this.loaded = true
   }
 
   async processVideo(
-    mp3File: File,
-    clips: VideoClip[],
-    mp3Duration: number,
-    onProgress?: (progress: number, status: string) => void
-  ): Promise<Blob> {
+    mp3File,
+    clips,
+    mp3Duration,
+    onProgress
+  ) {
     if (!this.ffmpeg || !this.loaded) {
       throw new Error('FFmpeg not loaded')
     }
 
     try {
       // Write MP3 to FFmpeg filesystem
-      onProgress?.(5, 'Loading audio file...')
+      if (onProgress) onProgress(5, 'Loading audio file...')
       const mp3Data = new Uint8Array(await mp3File.arrayBuffer())
       await this.ffmpeg.writeFile('audio.mp3', mp3Data)
 
       // Step 1: Process each clip (loop, mute, scale)
-      onProgress?.(10, 'Processing video clips...')
+      if (onProgress) onProgress(10, 'Processing video clips...')
       for (let i = 0; i < clips.length; i++) {
         const clip = clips[i]
         if (!clip) continue
-        
+
         const duration = clip.end - clip.start
-        
-        onProgress?.(
+
+        if (onProgress) onProgress(
           10 + (i / clips.length) * 40,
           `Processing clip ${i + 1}/${clips.length}...`
         )
@@ -83,7 +89,7 @@ class FFmpegService {
       }
 
       // Step 2: Create concat file list
-      onProgress?.(50, 'Stitching clips together...')
+      if (onProgress) onProgress(50, 'Stitching clips together...')
       let fileListContent = ''
       for (let i = 0; i < clips.length; i++) {
         fileListContent += `file 'temp_${i}.mp4'\n`
@@ -109,7 +115,7 @@ class FFmpegService {
       await this.ffmpeg.deleteFile('filelist.txt')
 
       // Step 3: Mux with MP3 audio (skip cover art, use only audio stream)
-      onProgress?.(80, 'Adding audio track...')
+      if (onProgress) onProgress(80, 'Adding audio track...')
       await this.ffmpeg.exec([
         '-i', 'stitched.mp4',
         '-i', 'audio.mp3',
@@ -132,21 +138,21 @@ class FFmpegService {
       await this.ffmpeg.deleteFile('audio.mp3')
 
       // Read final output
-      onProgress?.(95, 'Finalizing...')
-      const data = await this.ffmpeg.readFile('final_output.mp4') as Uint8Array
+      if (onProgress) onProgress(95, 'Finalizing...')
+      const data = await this.ffmpeg.readFile('final_output.mp4')
       await this.ffmpeg.deleteFile('final_output.mp4')
 
-      onProgress?.(100, 'Complete!')
+      if (onProgress) onProgress(100, 'Complete!')
 
       // Return as Blob
-      return new Blob([data.buffer as ArrayBuffer], { type: 'video/mp4' })
+      return new Blob([data.buffer], { type: 'video/mp4' })
     } catch (error) {
       console.error('FFmpeg processing error:', error)
       throw error
     }
   }
 
-  isLoaded(): boolean {
+  isLoaded() {
     return this.loaded
   }
 }
