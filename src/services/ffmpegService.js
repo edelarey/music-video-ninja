@@ -18,10 +18,10 @@ class FFmpegService {
 
     // This progress listener is now driven by the audio duration for accuracy
     this.ffmpeg.on('progress', ({ time, progress }) => {
-      // Also log the raw ffmpeg progress for debugging
-      console.log(`[FFmpeg Progress] Raw Time: ${time}, Raw Progress: ${progress}`)
+      const timeInSeconds = time / 1000000;
+      // Log the ffmpeg progress in seconds for readability
+      console.log(`[FFmpeg Progress] Time: ${timeInSeconds.toFixed(2)}s / ${this._mp3Duration.toFixed(2)}s`)
       if (this._mp3Duration > 0 && this._onProgress) {
-        const timeInSeconds = time / 1000000;
         const percent = Math.min(100, Math.round((timeInSeconds / this._mp3Duration) * 100))
         this._onProgress(percent)
       }
@@ -75,25 +75,27 @@ class FFmpegService {
         const clip = clips[i]
         if (!clip) continue
 
-        const duration = clip.end - clip.start
-
+        const segmentDuration = clip.end - clip.start
         if (onStatusUpdate) onStatusUpdate(`Processing clip ${i + 1}/${clips.length}...`)
 
-        // Write clip to filesystem
+        // Write original clip to filesystem
         const clipData = new Uint8Array(await clip.file.arrayBuffer())
         await this.ffmpeg.writeFile(`clip_${i}.mp4`, clipData)
 
-        // Loop, mute, and scale the clip to fill the assigned duration
+        // --- The "Still Image" Optimization Strategy ---
+        // Your command-line insight was key. Using `-tune stillimage` dramatically
+        // reduces the resources needed for looping and re-encoding, which should
+        // prevent the browser from running out of memory.
         await this.ffmpeg.exec([
           '-stream_loop', '-1',
           '-i', `clip_${i}.mp4`,
-          '-t', duration.toString(),
-          '-an',
+          '-t', segmentDuration.toString(),
+          '-an', // Mute audio - this is correct for this step
           '-c:v', 'libx264',
+          '-tune', 'stillimage', // The key optimization!
           '-preset', 'fast',
           '-crf', '23',
           '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p',
-          '-map', '0:v:0',
           `temp_${i}.mp4`
         ])
 
