@@ -27,6 +27,9 @@ class FFmpegService {
         coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
         wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
         workerURL: await toBlobURL(`${baseURL}/ffmpeg-core.worker.js`, 'text/javascript'),
+      }, {
+        // Enable multi-threading
+        pthreads: navigator.hardwareConcurrency,
       })
       console.log('FFmpeg loaded successfully!')
     } catch (error) {
@@ -121,14 +124,10 @@ class FFmpegService {
         '-i', 'audio.mp3',
         '-map', '0:v:0',
         '-map', '1:a:0',
-        '-c:v', 'libx264',
-        '-preset', 'medium',
-        '-crf', '23',
-        '-tune', 'stillimage',
+        '-c:v', 'copy',
         '-c:a', 'aac',
         '-b:a', '192k',
-        '-t', mp3Duration.toString(),
-        '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p',
+        '-shortest',
         '-movflags', '+faststart',
         'final_output.mp4'
       ])
