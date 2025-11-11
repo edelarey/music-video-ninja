@@ -76,31 +76,51 @@ class FFmpegService {
         if (!clip) continue
 
         const segmentDuration = clip.end - clip.start
-        if (onStatusUpdate) onStatusUpdate(`Processing clip ${i + 1}/${clips.length}...`)
 
         // Write original clip to filesystem
         const clipData = new Uint8Array(await clip.file.arrayBuffer())
-        await this.ffmpeg.writeFile(`clip_${i}.mp4`, clipData)
+        await this.ffmpeg.writeFile(`source_clip_${i}.mp4`, clipData)
 
-        // --- The "Still Image" Optimization Strategy ---
-        // Your command-line insight was key. Using `-tune stillimage` dramatically
-        // reduces the resources needed for looping and re-encoding, which should
-        // prevent the browser from running out of memory.
+        // --- Definitive Strategy: Isolate Intensive Operations ---
+
+        // 1. Pre-process: Scale and mute the *short* source clip. This re-encodes
+        //    for a very short duration, which is memory-safe.
+        if (onStatusUpdate) onStatusUpdate(`Pre-processing clip ${i + 1}...`)
         await this.ffmpeg.exec([
-          '-stream_loop', '-1',
-          '-i', `clip_${i}.mp4`,
-          '-t', segmentDuration.toString(),
-          '-an', // Mute audio - this is correct for this step
-          '-c:v', 'libx264',
-          '-tune', 'stillimage', // The key optimization!
-          '-preset', 'fast',
-          '-crf', '23',
+          '-i', `source_clip_${i}.mp4`,
+          '-an', // Mute audio
           '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p',
+          '-c:v', 'libx264',
+          '-preset', 'ultrafast', // Use ultrafast to speed up this intermediate step
+          '-crf', '23',
+          `processed_clip_${i}.mp4`
+        ])
+        await this.ffmpeg.deleteFile(`source_clip_${i}.mp4`)
+
+        // 2. Loop: Use the pre-processed clip with the efficient concat demuxer.
+        //    This step now only stream-copies, making it extremely fast and light.
+        if (onStatusUpdate) onStatusUpdate(`Looping clip ${i + 1}...`)
+        const clipDuration = clip.duration
+        const loopCount = Math.ceil(segmentDuration / clipDuration)
+        let loopListContent = ''
+        for (let j = 0; j < loopCount; j++) {
+          loopListContent += `file 'processed_clip_${i}.mp4'\n`
+        }
+        await this.ffmpeg.writeFile(`looplist_${i}.txt`, new TextEncoder().encode(loopListContent))
+
+        // 3. Final Segment: Create the final segment by stream-copying and trimming.
+        await this.ffmpeg.exec([
+          '-f', 'concat',
+          '-safe', '0',
+          '-i', `looplist_${i}.txt`,
+          '-t', segmentDuration.toString(),
+          '-c', 'copy', // Use stream copy - NO re-encoding!
           `temp_${i}.mp4`
         ])
 
-        // Clean up source clip
-        await this.ffmpeg.deleteFile(`clip_${i}.mp4`)
+        // Clean up intermediate files
+        await this.ffmpeg.deleteFile(`processed_clip_${i}.mp4`)
+        await this.ffmpeg.deleteFile(`looplist_${i}.txt`)
       }
 
       // Step 2: Create concat file list
