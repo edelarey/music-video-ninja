@@ -6,16 +6,24 @@ class FFmpegService {
     this.loaded = false
   }
 
-  async load(onProgress) {
+  async load() {
     if (this.loaded) return
 
     this.ffmpeg.on('log', ({ message }) => {
-      console.log('[FFmpeg]', message)
+      // Filter out verbose progress messages from the general log
+      if (!message.startsWith('frame=')) {
+        console.log('[FFmpeg Log]', message)
+      }
     })
 
-    this.ffmpeg.on('progress', ({ progress }) => {
-      if (onProgress) {
-        onProgress(Math.round(progress * 100))
+    // This progress listener is now driven by the audio duration for accuracy
+    this.ffmpeg.on('progress', ({ time, progress }) => {
+      // Also log the raw ffmpeg progress for debugging
+      console.log(`[FFmpeg Progress] Raw Time: ${time}, Raw Progress: ${progress}`)
+      if (this._mp3Duration > 0 && this._onProgress) {
+        const timeInSeconds = time / 1000000;
+        const percent = Math.min(100, Math.round((timeInSeconds / this._mp3Duration) * 100))
+        this._onProgress(percent)
       }
     })
 
@@ -44,30 +52,32 @@ class FFmpegService {
     mp3File,
     clips,
     mp3Duration,
-    onProgress
+    onProgress,
+    onStatusUpdate
   ) {
+    this._onProgress = onProgress // Store the UI progress callback
+    this._onStatusUpdate = onStatusUpdate // Store the status text callback
+    this._mp3Duration = mp3Duration // Store the mp3 duration
+
     if (!this.ffmpeg || !this.loaded) {
       throw new Error('FFmpeg not loaded')
     }
 
     try {
       // Write MP3 to FFmpeg filesystem
-      if (onProgress) onProgress(5, 'Loading audio file...')
+      if (onStatusUpdate) onStatusUpdate('Loading audio file...')
       const mp3Data = new Uint8Array(await mp3File.arrayBuffer())
       await this.ffmpeg.writeFile('audio.mp3', mp3Data)
 
       // Step 1: Process each clip (loop, mute, scale)
-      if (onProgress) onProgress(10, 'Processing video clips...')
+      if (onStatusUpdate) onStatusUpdate('Processing video clips...')
       for (let i = 0; i < clips.length; i++) {
         const clip = clips[i]
         if (!clip) continue
 
         const duration = clip.end - clip.start
 
-        if (onProgress) onProgress(
-          10 + (i / clips.length) * 40,
-          `Processing clip ${i + 1}/${clips.length}...`
-        )
+        if (onStatusUpdate) onStatusUpdate(`Processing clip ${i + 1}/${clips.length}...`)
 
         // Write clip to filesystem
         const clipData = new Uint8Array(await clip.file.arrayBuffer())
@@ -92,7 +102,7 @@ class FFmpegService {
       }
 
       // Step 2: Create concat file list
-      if (onProgress) onProgress(50, 'Stitching clips together...')
+      if (onStatusUpdate) onStatusUpdate('Stitching clips together...')
       let fileListContent = ''
       for (let i = 0; i < clips.length; i++) {
         fileListContent += `file 'temp_${i}.mp4'\n`
@@ -118,7 +128,7 @@ class FFmpegService {
       await this.ffmpeg.deleteFile('filelist.txt')
 
       // Step 3: Mux with MP3 audio (skip cover art, use only audio stream)
-      if (onProgress) onProgress(80, 'Adding audio track...')
+      if (onStatusUpdate) onStatusUpdate('Adding audio track...')
       await this.ffmpeg.exec([
         '-i', 'stitched.mp4',
         '-i', 'audio.mp3',
@@ -137,11 +147,11 @@ class FFmpegService {
       await this.ffmpeg.deleteFile('audio.mp3')
 
       // Read final output
-      if (onProgress) onProgress(95, 'Finalizing...')
+      if (onStatusUpdate) onStatusUpdate('Finalizing...')
       const data = await this.ffmpeg.readFile('final_output.mp4')
       await this.ffmpeg.deleteFile('final_output.mp4')
 
-      if (onProgress) onProgress(100, 'Complete!')
+      if (onStatusUpdate) onStatusUpdate('Complete!')
 
       // Return as Blob
       return new Blob([data.buffer], { type: 'video/mp4' })

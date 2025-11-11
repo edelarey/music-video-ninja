@@ -52,7 +52,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useEditorStore } from '../stores/editor'
-import { ffmpegService } from '../services/ffmpegService.js'
+import { ffmpegService } from '@/services/ffmpegService.js'
 
 const store = useEditorStore()
 const renderStatus = ref('Preparing...')
@@ -65,10 +65,8 @@ const handleRender = async () => {
     renderStatus.value = 'Loading FFmpeg...'
 
     // Load FFmpeg if not already loaded
-    await ffmpegService.load((progress) => {
-      store.setRenderProgress(progress)
-      renderStatus.value = 'Loading FFmpeg...'
-    })
+    renderStatus.value = 'Loading FFmpeg...'
+    await ffmpegService.load()
 
     // --- Robust Clip Adjustment Logic ---
     // 1. Sort clips to ensure correct order
@@ -102,9 +100,14 @@ const handleRender = async () => {
       store.mp3File,
       adjustedClips,
       store.mp3Duration,
-      (progress, status) => {
+      // UI Progress callback (percentage)
+      (progress: number) => {
         store.setRenderProgress(progress)
+      },
+      // Status Text callback (string)
+      (status: string) => {
         renderStatus.value = status
+        console.log(`[Render Status] ${status}`)
       }
     )
 
