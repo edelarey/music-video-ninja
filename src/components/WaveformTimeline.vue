@@ -73,6 +73,7 @@ const isPlaying = ref(false)
 const currentTime = ref(0)
 const volume = ref(80)
 const isDragOver = ref(false)
+const selectedRegionId = ref<string | null>(null)
 
 
 const initWavesurfer = () => {
@@ -125,17 +126,21 @@ const initWavesurfer = () => {
     })
 
     regionsPlugin.on('region-removed', (region) => {
-      // This is needed to handle undo/redo, but we are not using it yet
+      if (region.id === selectedRegionId.value) {
+        selectedRegionId.value = null
+      }
     })
 
     regionsPlugin.on('region-clicked', (region, e: MouseEvent) => {
-      if (e.button === 2) { // Right-click
-        e.preventDefault()
-        if (region) {
-          region.remove()
-          store.removeClip(region.id)
-        }
+      e.stopPropagation()
+      
+      if (selectedRegionId.value && regionsPlugin) {
+        const oldRegion = regionsPlugin.getRegions().find(r => r.id === selectedRegionId.value)
+        oldRegion?.element?.classList.remove('selected')
       }
+
+      selectedRegionId.value = region.id
+      region.element?.classList.add('selected')
     })
   }
 }
@@ -178,10 +183,18 @@ const updateRegions = () => {
         color: clip.source.color + '40',
         drag: true,
         resize: true,
-        content: clip.source.file.name
+        content: clip.source.file.name,
       })
     }
   })
+
+  // Re-apply selection style if it exists
+  if (selectedRegionId.value && regionsPlugin) {
+    const selectedRegion = regionsPlugin.getRegions().find(r => r.id === selectedRegionId.value)
+    if (selectedRegion) {
+      selectedRegion.element?.classList.add('selected')
+    }
+  }
 }
 
 const formatDuration = (seconds: number): string => {
@@ -230,16 +243,24 @@ watch(() => store.clips, () => {
   }
 }, { deep: true })
 
+const handleKeyDown = (event: KeyboardEvent) => {
+  if (event.key === 'Delete' && selectedRegionId.value) {
+    store.removeClip(selectedRegionId.value)
+  }
+}
+
 onMounted(() => {
   if (store.hasMP3) {
     initWavesurfer()
   }
+  window.addEventListener('keydown', handleKeyDown)
 })
 
 onBeforeUnmount(() => {
   if (wavesurfer) {
     wavesurfer.destroy()
   }
+  window.removeEventListener('keydown', handleKeyDown)
 })
 </script>
 
@@ -398,6 +419,13 @@ onBeforeUnmount(() => {
   width: 100%;
   margin-bottom: 1rem;
   cursor: pointer;
+}
+
+/* This is a deep selector to style the region element inside WaveSurfer */
+:deep(.waveform .selected) {
+  outline: 2px solid #ff4444;
+  box-shadow: 0 0 10px rgba(255, 68, 68, 0.7);
+  z-index: 10 !important; /* Ensure selected region is on top */
 }
 
 .timeline-info {
