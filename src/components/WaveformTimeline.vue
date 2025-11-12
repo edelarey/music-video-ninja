@@ -12,12 +12,22 @@
       :class="{ 'drop-active': isDragOver }"
     >
       <div class="playback-controls">
+        <button @click="rewind" class="control-btn" title="Rewind 5s">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M11 18V6l-8.5 6 8.5 6zm.5-6 8.5 6V6l-8.5 6z"/>
+          </svg>
+        </button>
         <button @click="togglePlayPause" class="control-btn play-btn" :title="isPlaying ? 'Pause' : 'Play'">
           <svg v-if="!isPlaying" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
             <path d="M8 5v14l11-7z"/>
           </svg>
           <svg v-else width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
             <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+          </svg>
+        </button>
+        <button @click="fastForward" class="control-btn" title="Fast-forward 5s">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z"/>
           </svg>
         </button>
         <button @click="stop" class="control-btn" title="Stop">
@@ -143,6 +153,16 @@ const initWavesurfer = () => {
       region.element?.classList.add('selected')
     })
   }
+}
+
+const rewind = () => {
+  if (!wavesurfer) return
+  wavesurfer.skip(-5)
+}
+
+const fastForward = () => {
+  if (!wavesurfer) return
+  wavesurfer.skip(5)
 }
 
 const togglePlayPause = () => {
