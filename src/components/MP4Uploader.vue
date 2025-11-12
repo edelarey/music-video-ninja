@@ -37,10 +37,10 @@
       >
         <div class="color-swatch" :style="{ backgroundColor: source.color }"></div>
         <div class="clip-info">
-          <p class="filename">{{ source.file.name }}</p>
-          <p class="details">
+          <div class="details">{{ source.file.name }}</div>
+          <div class="details">
             <span>Duration: {{ formatDuration(source.duration) }}</span>
-          </p>
+          </div>
         </div>
         <button @click="removeVideoSource(source.sourceId)" class="remove-btn" title="Remove source and all its clips">×</button>
       </div>
@@ -208,21 +208,16 @@ const formatDuration = (seconds: number): string => {
 }
 
 .filename {
-  margin: 0;
   font-weight: 500;
-  color: #000000;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  color: #213547;
 }
 
 .details {
-  margin: 0.25rem 0 0 0;
   font-size: 0.85rem;
   color: #666;
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
 }
 
 .separator {
@@ -251,6 +246,14 @@ const formatDuration = (seconds: number): string => {
 }
 
 @media (prefers-color-scheme: dark) {
+  .hint {
+    color: #aaa;
+  }
+
+  .drag-hint {
+    color: #aaa;
+  }
+
   .clips-list h3,
   .filename {
     color: #fff;
@@ -258,6 +261,20 @@ const formatDuration = (seconds: number): string => {
   
   .details {
     color: #aaa;
+  }
+
+  .clip-item {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .clip-item:hover {
+    background: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+
+  .color-swatch {
+    border-color: rgba(255,255,255,0.2);
   }
 }
 </style>
