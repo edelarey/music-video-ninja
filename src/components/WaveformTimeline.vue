@@ -3,7 +3,14 @@
     <div v-if="!store.hasMP3" class="no-mp3">
       <p>Upload an MP3 file to see the waveform</p>
     </div>
-    <div v-else class="waveform-container">
+    <div
+      v-else
+      class="waveform-container"
+      @dragover.prevent="handleDragOver"
+      @dragleave.prevent="handleDragLeave"
+      @drop.prevent="handleDrop"
+      :class="{ 'drop-active': isDragOver }"
+    >
       <div class="playback-controls">
         <button @click="togglePlayPause" class="control-btn play-btn" :title="isPlaying ? 'Pause' : 'Play'">
           <svg v-if="!isPlaying" width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
@@ -43,7 +50,7 @@
       <div class="timeline-info">
         <p>Duration: {{ formatDuration(store.mp3Duration) }}</p>
         <p v-if="store.clips.length > 0">
-          Clips: {{ store.clips.length }} |
+          Clips on Timeline: {{ store.clips.length }} |
           Timeline Coverage: {{ formatDuration(store.totalClipsDuration) }}
         </p>
       </div>
@@ -65,6 +72,7 @@ let regionsPlugin: RegionsPlugin | null = null
 const isPlaying = ref(false)
 const currentTime = ref(0)
 const volume = ref(80)
+const isDragOver = ref(false)
 
 
 const initWavesurfer = () => {
@@ -113,10 +121,20 @@ const initWavesurfer = () => {
   // Handle region updates
   if (regionsPlugin) {
     regionsPlugin.on('region-updated', (region) => {
-      const clipId = region.id
-      const clip = store.clips.find(c => c.id === clipId)
-      if (clip) {
-        store.updateClipPosition(clipId, region.start, region.end)
+      store.updateClipPosition(region.id, region.start, region.end)
+    })
+
+    regionsPlugin.on('region-removed', (region) => {
+      // This is needed to handle undo/redo, but we are not using it yet
+    })
+
+    regionsPlugin.on('region-clicked', (region, e: MouseEvent) => {
+      if (e.button === 2) { // Right-click
+        e.preventDefault()
+        if (region) {
+          region.remove()
+          store.removeClip(region.id)
+        }
       }
     })
   }
@@ -151,15 +169,18 @@ const updateRegions = () => {
   regionsPlugin.clearRegions()
 
   // Add regions for each clip
-  store.clips.forEach(clip => {
-    regionsPlugin?.addRegion({
-      id: clip.id,
-      start: clip.start,
-      end: clip.end,
-      color: clip.color + '40', // Use the color from the store with some transparency
-      drag: true,
-      resize: true
-    })
+  store.clipsWithSource.forEach(clip => {
+    if (clip.source) {
+      regionsPlugin?.addRegion({
+        id: clip.id,
+        start: clip.start,
+        end: clip.end,
+        color: clip.source.color + '40',
+        drag: true,
+        resize: true,
+        content: clip.source.file.name
+      })
+    }
   })
 }
 
@@ -167,6 +188,28 @@ const formatDuration = (seconds: number): string => {
   const mins = Math.floor(seconds / 60)
   const secs = Math.floor(seconds % 60)
   return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+const handleDragOver = () => {
+  isDragOver.value = true
+}
+
+const handleDragLeave = () => {
+  isDragOver.value = false
+}
+
+const handleDrop = (event: DragEvent) => {
+  isDragOver.value = false
+  if (!event.dataTransfer || !wavesurfer) return
+
+  const sourceId = event.dataTransfer.getData('text/plain')
+  const source = store.videoSources.find(s => s.sourceId === sourceId)
+  if (!source) return
+
+  const dropTime = wavesurfer.getDuration() * (event.offsetX / (waveformRef.value?.clientWidth || 1))
+  const newEnd = Math.min(dropTime + source.duration, store.mp3Duration)
+  
+  store.addClip(sourceId, dropTime, newEnd)
 }
 
 // Watch for MP3 file changes
@@ -181,7 +224,7 @@ watch(() => store.mp3File, (newFile) => {
 })
 
 // Watch for clip changes
-watch(() => store.clips.length, () => {
+watch(() => store.clips, () => {
   if (wavesurfer) {
     updateRegions()
   }
@@ -222,6 +265,31 @@ onBeforeUnmount(() => {
 
 .waveform-container {
   width: 100%;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.waveform-container.drop-active {
+  box-shadow: 0 0 0 4px #4ecdc4;
+  border-radius: 8px;
+}
+
+.waveform-container.drop-active::after {
+  content: 'Drop video clip here';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(78, 205, 196, 0.7);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  font-weight: bold;
+  pointer-events: none;
+  border-radius: 8px;
 }
 
 .playback-controls {

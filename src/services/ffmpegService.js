@@ -75,7 +75,7 @@ class FFmpegService {
       if (onStatusUpdate) onStatusUpdate('Processing video clips...')
       for (let i = 0; i < clips.length; i++) {
         const clip = clips[i]
-        if (!clip) continue
+        if (!clip || !clip.source) continue
 
         const segmentDuration = clip.end - clip.start
         const sourceClipName = `source_clip_${i}.mp4`;
@@ -86,7 +86,7 @@ class FFmpegService {
         filesToClean.add(sourceClipName).add(processedClipName).add(loopListName).add(tempClipName);
 
         // Write original clip to filesystem
-        const clipData = new Uint8Array(await clip.file.arrayBuffer())
+        const clipData = new Uint8Array(await clip.source.file.arrayBuffer())
         await this.ffmpeg.writeFile(sourceClipName, clipData)
 
         // --- Definitive Strategy: Isolate Intensive Operations ---
@@ -105,7 +105,7 @@ class FFmpegService {
 
         // 2. Loop: Use the pre-processed clip with the efficient concat demuxer.
         if (onStatusUpdate) onStatusUpdate(`Looping clip ${i + 1}...`)
-        const clipDuration = clip.duration
+        const clipDuration = clip.source.duration
         const loopCount = Math.ceil(segmentDuration / clipDuration)
         let loopListContent = ''
         for (let j = 0; j < loopCount; j++) {

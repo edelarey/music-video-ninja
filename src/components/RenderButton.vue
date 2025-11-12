@@ -70,7 +70,7 @@ const handleRender = async () => {
 
     // --- Robust Clip Adjustment Logic ---
     // 1. Sort clips to ensure correct order
-    const sortedClips = [...store.clips].sort((a, b) => a.start - b.start)
+    const sortedClips = [...store.clipsWithSource].sort((a, b) => a.start - b.start)
 
     // 2. Calculate total duration of user-defined clip segments
     const totalUserDuration = sortedClips.reduce((sum, clip) => sum + (clip.end - clip.start), 0)

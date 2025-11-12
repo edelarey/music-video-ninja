@@ -25,21 +25,24 @@
       </div>
     </div>
     
-    <div v-if="store.clips.length > 0" class="clips-list">
-      <h3>Uploaded Clips ({{ store.clips.length }})</h3>
-      <div class="clip-item" v-for="clip in store.clips" :key="clip.id">
-        <div class="color-swatch" :style="{ backgroundColor: clip.color }"></div>
+    <div v-if="store.videoSources.length > 0" class="clips-list">
+      <h3>Available Clips ({{ store.videoSources.length }})</h3>
+      <p class="drag-hint">Drag a clip onto the timeline to use it.</p>
+      <div
+        class="clip-item"
+        v-for="source in store.videoSources"
+        :key="source.sourceId"
+        draggable="true"
+        @dragstart="handleDragStart($event, source.sourceId)"
+      >
+        <div class="color-swatch" :style="{ backgroundColor: source.color }"></div>
         <div class="clip-info">
-          <p class="filename">{{ clip.file.name }}</p>
+          <p class="filename">{{ source.file.name }}</p>
           <p class="details">
-            <span>Clip: {{ formatDuration(clip.duration) }}</span>
-            <span class="separator">•</span>
-            <span>Timeline: {{ formatDuration(clip.start) }} - {{ formatDuration(clip.end) }}</span>
-            <span class="separator">•</span>
-            <span>Section: {{ formatDuration(clip.end - clip.start) }}</span>
+            <span>Duration: {{ formatDuration(source.duration) }}</span>
           </p>
         </div>
-        <button @click="removeClip(clip.id)" class="remove-btn" title="Remove clip">×</button>
+        <button @click="removeVideoSource(source.sourceId)" class="remove-btn" title="Remove source and all its clips">×</button>
       </div>
     </div>
   </div>
@@ -74,16 +77,7 @@ const loadMP4File = (file: File) => {
   const url = URL.createObjectURL(file)
   
   video.addEventListener('loadedmetadata', () => {
-    const clipDuration = video.duration
-    const currentEnd = store.totalClipsDuration
-    
-    store.addClip(file, currentEnd, currentEnd + clipDuration)
-    
-    const lastClip = store.clips[store.clips.length - 1]
-    if (lastClip) {
-      store.setClipDuration(lastClip.id, clipDuration)
-    }
-    
+    store.addVideoSource(file, video.duration)
     URL.revokeObjectURL(url)
   })
   
@@ -95,16 +89,17 @@ const loadMP4File = (file: File) => {
   video.src = url
 }
 
-const removeClip = (id: string) => {
-  store.removeClip(id)
-  
-  // Recalculate positions for remaining clips
-  let currentPosition = 0
-  store.clips.forEach(clip => {
-    const duration = clip.end - clip.start
-    store.updateClipPosition(clip.id, currentPosition, currentPosition + duration)
-    currentPosition += duration
-  })
+const handleDragStart = (event: DragEvent, sourceId: string) => {
+  if (event.dataTransfer) {
+    event.dataTransfer.setData('text/plain', sourceId)
+    event.dataTransfer.effectAllowed = 'copy'
+  }
+}
+
+const removeVideoSource = (sourceId: string) => {
+  if (confirm('Are you sure you want to remove this video source and all its clips from the timeline?')) {
+    store.removeVideoSource(sourceId)
+  }
 }
 
 const formatDuration = (seconds: number): string => {
@@ -157,6 +152,13 @@ const formatDuration = (seconds: number): string => {
   color: #888;
 }
 
+.drag-hint {
+  font-size: 0.9rem;
+  color: #666;
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
 .clips-list {
   margin-top: 1.5rem;
 }
@@ -176,11 +178,19 @@ const formatDuration = (seconds: number): string => {
   border: 1px solid rgba(66, 184, 131, 0.2);
   border-radius: 8px;
   margin-bottom: 0.5rem;
-  transition: background 0.2s ease;
+  transition: all 0.2s ease;
+  cursor: grab;
 }
 
 .clip-item:hover {
   background: rgba(66, 184, 131, 0.1);
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.clip-item:active {
+  cursor: grabbing;
+  transform: scale(0.98);
 }
 
 .color-swatch {
@@ -200,7 +210,7 @@ const formatDuration = (seconds: number): string => {
 .filename {
   margin: 0;
   font-weight: 500;
-  color: #213547;
+  color: #000000;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
