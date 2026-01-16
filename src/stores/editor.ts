@@ -13,6 +13,7 @@ export interface VideoClip {
   sourceId: string
   start: number
   end: number
+  loopMode: 'repeat' | 'ping-pong'
 }
 
 const CLIP_COLORS = [
@@ -68,7 +69,8 @@ export const useEditorStore = defineStore('editor', () => {
       id: crypto.randomUUID(),
       sourceId,
       start,
-      end
+      end,
+      loopMode: 'repeat'
     }
     clips.value.push(clip)
   }
@@ -83,6 +85,7 @@ export const useEditorStore = defineStore('editor', () => {
     if (clip) {
       if (updates.start !== undefined) clip.start = updates.start
       if (updates.end !== undefined) clip.end = updates.end
+      if (updates.loopMode !== undefined) clip.loopMode = updates.loopMode
     }
   }
 

@@ -63,13 +63,23 @@
           Clips on Timeline: {{ store.clips.length }} |
           Timeline Coverage: {{ formatDuration(store.totalClipsDuration) }}
         </p>
+        <div v-if="selectedClip" class="clip-controls">
+          <label class="checkbox-label">
+            <input
+              type="checkbox"
+              :checked="selectedClip.loopMode === 'ping-pong'"
+              @change="(e) => updateLoopMode((e.target as HTMLInputElement).checked)"
+            >
+            <span>Ping-Pong Loop</span>
+          </label>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch, onBeforeUnmount } from 'vue'
+import { ref, onMounted, watch, onBeforeUnmount, computed } from 'vue'
 import WaveSurfer from 'wavesurfer.js'
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.js'
 import { useEditorStore } from '../stores/editor'
@@ -85,6 +95,17 @@ const volume = ref(80)
 const isDragOver = ref(false)
 const selectedRegionId = ref<string | null>(null)
 
+const selectedClip = computed(() => {
+  if (!selectedRegionId.value) return null
+  return store.clips.find(c => c.id === selectedRegionId.value)
+})
+
+const updateLoopMode = (isPingPong: boolean) => {
+  if (!selectedRegionId.value) return
+  store.updateClip(selectedRegionId.value, {
+    loopMode: isPingPong ? 'ping-pong' : 'repeat'
+  })
+}
 
 const initWavesurfer = () => {
   if (!waveformRef.value || !store.mp3File) return
@@ -462,6 +483,29 @@ onBeforeUnmount(() => {
   margin: 0;
   font-size: 0.9rem;
   color: #666;
+}
+
+.clip-controls {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+  padding: 0.25rem 0.75rem;
+  background: rgba(100, 108, 255, 0.1);
+  border-radius: 4px;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+  color: #213547;
+  user-select: none;
+}
+
+.checkbox-label input {
+  cursor: pointer;
 }
 
 @media (max-width: 768px) {

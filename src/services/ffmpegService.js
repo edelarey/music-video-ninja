@@ -80,10 +80,12 @@ class FFmpegService {
         const segmentDuration = clip.end - clip.start
         const sourceClipName = `source_clip_${i}.mp4`;
         const processedClipName = `processed_clip_${i}.mp4`;
+        const reversedClipName = `processed_clip_${i}_rev.mp4`;
         const loopListName = `looplist_${i}.txt`;
         const tempClipName = `temp_${i}.mp4`;
 
         filesToClean.add(sourceClipName).add(processedClipName).add(loopListName).add(tempClipName);
+        if (clip.loopMode === 'ping-pong') filesToClean.add(reversedClipName);
 
         // Write original clip to filesystem
         const clipData = new Uint8Array(await clip.source.file.arrayBuffer())
@@ -103,13 +105,30 @@ class FFmpegService {
           processedClipName
         ])
 
-        // 2. Loop: Use the pre-processed clip with the efficient concat demuxer.
+        // 1b. Create reversed clip if needed for ping-pong
+        if (clip.loopMode === 'ping-pong') {
+          if (onStatusUpdate) onStatusUpdate(`Creating reverse loop for clip ${i + 1}...`)
+          await this.ffmpeg.exec([
+            '-i', processedClipName,
+            '-vf', 'reverse',
+            '-c:v', 'libx264',
+            '-preset', 'ultrafast',
+            '-crf', '23',
+            reversedClipName
+          ])
+        }
+
+        // 2. Loop: Use the pre-processed clip (and optionally its reverse) with the efficient concat demuxer.
         if (onStatusUpdate) onStatusUpdate(`Looping clip ${i + 1}...`)
         const clipDuration = clip.source.duration
         const loopCount = Math.ceil(segmentDuration / clipDuration)
         let loopListContent = ''
         for (let j = 0; j < loopCount; j++) {
-          loopListContent += `file '${processedClipName}'\n`
+          if (clip.loopMode === 'ping-pong' && j % 2 === 1) {
+            loopListContent += `file '${reversedClipName}'\n`
+          } else {
+            loopListContent += `file '${processedClipName}'\n`
+          }
         }
         await this.ffmpeg.writeFile(loopListName, new TextEncoder().encode(loopListContent))
 
