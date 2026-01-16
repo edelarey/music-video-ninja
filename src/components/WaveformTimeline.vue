@@ -540,5 +540,9 @@ onBeforeUnmount(() => {
   .timeline-info p {
     color: #aaa;
   }
+
+  .checkbox-label {
+    color: #fff;
+  }
 }
 </style>
