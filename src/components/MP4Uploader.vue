@@ -27,13 +27,15 @@
     
     <div v-if="store.videoSources.length > 0" class="clips-list">
       <h3>Available Clips ({{ store.videoSources.length }})</h3>
-      <p class="drag-hint">Drag a clip onto the timeline to use it.</p>
+      <p class="drag-hint">Click to preview, or drag a clip onto the timeline to use it.</p>
       <div
         class="clip-item"
         v-for="source in store.videoSources"
         :key="source.sourceId"
+        :class="{ selected: selectedSourceId === source.sourceId }"
         draggable="true"
         @dragstart="handleDragStart($event, source.sourceId)"
+        @click="selectForPreview(source)"
       >
         <div class="color-swatch" :style="{ backgroundColor: source.color }"></div>
         <div class="clip-info">
@@ -42,18 +44,28 @@
             <span>Duration: {{ formatDuration(source.duration) }}</span>
           </div>
         </div>
-        <button @click="removeVideoSource(source.sourceId)" class="remove-btn" title="Remove source and all its clips">×</button>
+        <button @click.stop="removeVideoSource(source.sourceId)" class="remove-btn" title="Remove source and all its clips">×</button>
       </div>
+    </div>
+
+    <div v-if="previewUrl" class="video-preview">
+      <div class="preview-header">
+        <h3>Preview</h3>
+        <button @click="clearPreview" class="close-preview-btn">×</button>
+      </div>
+      <video :src="previewUrl" controls autoplay muted class="preview-player"></video>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useEditorStore } from '../stores/editor'
+import { ref, onUnmounted } from 'vue'
+import { useEditorStore, type VideoSource } from '../stores/editor'
 
 const store = useEditorStore()
 const fileInput = ref<HTMLInputElement | null>(null)
+const selectedSourceId = ref<string | null>(null)
+const previewUrl = ref<string | null>(null)
 
 const triggerFileInput = () => {
   fileInput.value?.click()
@@ -98,9 +110,40 @@ const handleDragStart = (event: DragEvent, sourceId: string) => {
 
 const removeVideoSource = (sourceId: string) => {
   if (confirm('Are you sure you want to remove this video source and all its clips from the timeline?')) {
+    if (selectedSourceId.value === sourceId) {
+      clearPreview()
+    }
     store.removeVideoSource(sourceId)
   }
 }
+
+const selectForPreview = (source: VideoSource) => {
+  if (selectedSourceId.value === source.sourceId) {
+    clearPreview()
+    return
+  }
+  
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+  }
+  
+  selectedSourceId.value = source.sourceId
+  previewUrl.value = URL.createObjectURL(source.file)
+}
+
+const clearPreview = () => {
+  selectedSourceId.value = null
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+    previewUrl.value = null
+  }
+}
+
+onUnmounted(() => {
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+  }
+})
 
 const formatDuration = (seconds: number): string => {
   const mins = Math.floor(seconds / 60)
@@ -193,6 +236,54 @@ const formatDuration = (seconds: number): string => {
   transform: scale(0.98);
 }
 
+.clip-item.selected {
+  background: rgba(66, 184, 131, 0.2);
+  border-color: #42b883;
+  box-shadow: 0 0 0 2px rgba(66, 184, 131, 0.2);
+}
+
+.video-preview {
+  margin-top: 1.5rem;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 1rem;
+  border-radius: 8px;
+  animation: fadeIn 0.3s ease;
+}
+
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.preview-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: #213547;
+}
+
+.close-preview-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+}
+
+.close-preview-btn:hover {
+  color: #ff4444;
+}
+
+.preview-player {
+  width: 100%;
+  max-height: 300px;
+  background: #000;
+  border-radius: 4px;
+}
+
 .color-swatch {
   width: 24px;
   height: 24px;
@@ -245,6 +336,11 @@ const formatDuration = (seconds: number): string => {
   background: #cc0000;
 }
 
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 @media (prefers-color-scheme: dark) {
   .hint {
     color: #aaa;
@@ -271,6 +367,28 @@ const formatDuration = (seconds: number): string => {
   .clip-item:hover {
     background: rgba(255, 255, 255, 0.12);
     box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+
+  .clip-item.selected {
+    background: rgba(66, 184, 131, 0.25);
+    border-color: #42b883;
+  }
+
+  .video-preview {
+    background: rgba(255, 255, 255, 0.05);
+    border-top-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .preview-header h3 {
+    color: #fff;
+  }
+
+  .close-preview-btn {
+    color: #aaa;
+  }
+
+  .close-preview-btn:hover {
+    color: #ff6666;
   }
 
   .color-swatch {
