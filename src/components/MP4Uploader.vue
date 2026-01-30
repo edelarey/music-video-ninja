@@ -28,23 +28,25 @@
     <div v-if="store.videoSources.length > 0" class="clips-list">
       <h3>Available Clips ({{ store.videoSources.length }})</h3>
       <p class="drag-hint">Click to preview, or drag a clip onto the timeline to use it.</p>
-      <div
-        class="clip-item"
-        v-for="source in store.videoSources"
-        :key="source.sourceId"
-        :class="{ selected: selectedSourceId === source.sourceId }"
-        draggable="true"
-        @dragstart="handleDragStart($event, source.sourceId)"
-        @click="selectForPreview(source)"
-      >
-        <div class="color-swatch" :style="{ backgroundColor: source.color }"></div>
-        <div class="clip-info">
-          <div class="details">{{ source.file.name }}</div>
-          <div class="details">
-            <span>Duration: {{ formatDuration(source.duration) }}</span>
+      <div class="clips-scroll-container">
+        <div
+          class="clip-item"
+          v-for="source in store.videoSources"
+          :key="source.sourceId"
+          :class="{ selected: selectedSourceId === source.sourceId }"
+          draggable="true"
+          @dragstart="handleDragStart($event, source.sourceId)"
+          @click="selectForPreview(source)"
+        >
+          <div class="color-swatch" :style="{ backgroundColor: source.color }"></div>
+          <div class="clip-info">
+            <div class="details">{{ source.file.name }}</div>
+            <div class="details">
+              <span>Duration: {{ formatDuration(source.duration) }}</span>
+            </div>
           </div>
+          <button @click.stop="removeVideoSource(source.sourceId)" class="remove-btn" title="Remove source and all its clips">×</button>
         </div>
-        <button @click.stop="removeVideoSource(source.sourceId)" class="remove-btn" title="Remove source and all its clips">×</button>
       </div>
     </div>
 
@@ -204,6 +206,31 @@ const formatDuration = (seconds: number): string => {
 
 .clips-list {
   margin-top: 1.5rem;
+}
+
+.clips-scroll-container {
+  max-height: 380px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+/* Custom scrollbar styling */
+.clips-scroll-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.clips-scroll-container::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 3px;
+}
+
+.clips-scroll-container::-webkit-scrollbar-thumb {
+  background: rgba(66, 184, 131, 0.5);
+  border-radius: 3px;
+}
+
+.clips-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(66, 184, 131, 0.8);
 }
 
 .clips-list h3 {
