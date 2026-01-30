@@ -63,6 +63,9 @@
           Clips on Timeline: {{ store.clips.length }} |
           Timeline Coverage: {{ formatDuration(store.totalClipsDuration) }}
         </p>
+        <p v-if="selectedClip?.source" class="selected-clip-info">
+          Selected: <span class="filename">{{ selectedClip.source.file.name }}</span>
+        </p>
         <div v-if="selectedClip" class="clip-controls">
           <label class="checkbox-label">
             <input
@@ -97,7 +100,7 @@ const selectedRegionId = ref<string | null>(null)
 
 const selectedClip = computed(() => {
   if (!selectedRegionId.value) return null
-  return store.clips.find(c => c.id === selectedRegionId.value)
+  return store.clipsWithSource.find(c => c.id === selectedRegionId.value)
 })
 
 const updateLoopMode = (isPingPong: boolean) => {
@@ -485,6 +488,11 @@ onBeforeUnmount(() => {
   color: #666;
 }
 
+.selected-clip-info .filename {
+  font-weight: 600;
+  color: #213547;
+}
+
 .clip-controls {
   display: flex;
   align-items: center;
@@ -539,6 +547,10 @@ onBeforeUnmount(() => {
 
   .timeline-info p {
     color: #aaa;
+  }
+
+  .selected-clip-info .filename {
+    color: #fff;
   }
 
   .checkbox-label {
