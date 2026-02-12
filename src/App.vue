@@ -4,6 +4,8 @@
       <h1><router-link to="/" class="header-link">🪃 Loop Jitsu</router-link></h1>
       <p class="tagline">Client-side video editor with MP3 soundtrack</p>
       <nav>
+        <router-link to="/" class="nav-link">Music Video</router-link>
+        <router-link to="/combiner" class="nav-link">Video Combiner</router-link>
         <router-link to="/about" class="nav-link">About</router-link>
       </nav>
     </header>
@@ -56,6 +58,9 @@
 
 nav {
   margin-top: 1rem;
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
 }
 
 .nav-link {
@@ -69,6 +74,10 @@ nav {
 
 .nav-link:hover {
   background: rgba(255, 255, 255, 0.2);
+}
+
+.nav-link.router-link-exact-active {
+  background: rgba(255, 255, 255, 0.3);
 }
 
 .footer {

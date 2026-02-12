@@ -17,11 +17,15 @@ class FFmpegService {
     })
 
     // This progress listener is now driven by the audio duration for accuracy
+    // Only fires progress updates when _mp3Duration is set (i.e., during processVideo)
     this.ffmpeg.on('progress', ({ time, progress }) => {
+      // Skip if _mp3Duration is not set (e.g., during combineVideos which handles its own progress)
+      if (!this._mp3Duration || this._mp3Duration <= 0) return
+      
       const timeInSeconds = time / 1000000;
       // Log the ffmpeg progress in seconds for readability
       console.log(`[FFmpeg Progress] Time: ${timeInSeconds.toFixed(2)}s / ${this._mp3Duration.toFixed(2)}s`)
-      if (this._mp3Duration > 0 && this._onProgress) {
+      if (this._onProgress) {
         const percent = Math.min(100, Math.round((timeInSeconds / this._mp3Duration) * 100))
         this._onProgress(percent)
       }
@@ -204,6 +208,193 @@ class FFmpegService {
 
   isLoaded() {
     return this.loaded
+  }
+
+  /**
+   * Combine multiple video clips into a single video with a specific resolution.
+   * @param {Array} clips - Array of { id, sourceId, source: { file, duration, name } }
+   * @param {Object} resolution - { width, height } target resolution
+   * @param {number} totalDuration - Total duration of all clips combined
+   * @param {Function} onProgress - Progress callback (percentage)
+   * @param {Function} onStatusUpdate - Status text callback
+   * @returns {Promise<Blob>} - Combined video as a Blob
+   */
+  async combineVideos(
+    clips,
+    resolution,
+    totalDuration,
+    onProgress,
+    onStatusUpdate
+  ) {
+    // For combineVideos, we'll track progress manually based on clip processing stages
+    // Don't set this._mp3Duration as the FFmpeg progress events would give incorrect readings
+    
+    if (!this.ffmpeg || !this.loaded) {
+      throw new Error('FFmpeg not loaded')
+    }
+
+    const filesToClean = new Set(['filelist.txt', 'final_output.mp4'])
+    const validClips = clips.filter(c => c && c.source)
+    const totalSteps = validClips.length + 2 // encoding each clip + concat + finalize
+    let completedSteps = 0
+
+    // Custom progress handler for combineVideos to support sub-step progress
+    const reportOverallProgress = (subStepPercent = 0) => {
+      if (onProgress) {
+        const currentStepProgress = subStepPercent / 100
+        const totalProgress = ((completedSteps + currentStepProgress) / totalSteps) * 100
+        onProgress(Math.min(100, Math.round(totalProgress)))
+      }
+    }
+
+    try {
+      const { width, height } = resolution
+
+      // Step 1: Process each clip (scale to target resolution with letterboxing)
+      if (onStatusUpdate) onStatusUpdate('Processing video clips...')
+      reportOverallProgress()
+      
+      for (let i = 0; i < clips.length; i++) {
+        const clip = clips[i]
+        if (!clip || !clip.source) continue
+
+        const sourceClipName = `source_clip_${i}.mp4`
+        const processedClipName = `processed_clip_${i}.mp4`
+        const videoTemp = `temp_v_${i}.mp4`
+        const audioTemp = `temp_a_${i}.m4a`
+
+        filesToClean.add(sourceClipName)
+        filesToClean.add(processedClipName)
+        filesToClean.add(videoTemp)
+        filesToClean.add(audioTemp)
+
+        // Write original clip to filesystem
+        if (onStatusUpdate) onStatusUpdate(`Loading clip ${i + 1}/${validClips.length}: ${clip.source.name}`)
+        const clipData = new Uint8Array(await clip.source.file.arrayBuffer())
+        await this.ffmpeg.writeFile(sourceClipName, clipData)
+
+        // Re-encode with scaling (Separate Video and Audio passes to avoid WASM hanging)
+        if (onStatusUpdate) onStatusUpdate(`Processing clip ${i + 1}/${validClips.length}: ${clip.source.name}`)
+        
+        // Scaling and Padding Filter
+        const scaleFilter = `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p`
+        
+        console.log(`[FFmpeg Combiner] Starting processing of ${sourceClipName}`)
+        
+        // Setup clip-specific progress tracking
+        this._mp3Duration = clip.source.duration
+        this._onProgress = (percent) => reportOverallProgress(percent)
+
+        // Pass 1: Video Only (Resize/Pad)
+        if (onStatusUpdate) onStatusUpdate(`Encoding Video ${i + 1}/${validClips.length}...`)
+        await this.ffmpeg.exec([
+          '-i', sourceClipName,
+          '-vf', scaleFilter,
+          '-an', // No Audio
+          '-c:v', 'libx264',
+          '-preset', 'ultrafast',
+          '-crf', '23',
+          videoTemp
+        ])
+
+        // Pass 2: Audio Only (Extract & Normalize)
+        // We use try/catch to handle clips with no audio gracefully
+        let hasAudio = false
+        try {
+          if (onStatusUpdate) onStatusUpdate(`Encoding Audio ${i + 1}/${validClips.length}...`)
+          
+          // Check if audio stream exists implicitly by trying to process it
+          // Force stereo and 44.1kHz for consistent concatenation
+          const audioRes = await this.ffmpeg.exec([
+            '-i', sourceClipName,
+            '-vn', // No Video
+            '-c:a', 'aac',
+            '-b:a', '192k',
+            '-ac', '2',
+            '-ar', '44100',
+            audioTemp
+          ])
+          
+          // ffmpeg.exec returns 0 on success
+          if (audioRes === 0) {
+             hasAudio = true
+          }
+        } catch (e) {
+           console.warn(`[FFmpeg Combiner] Audio extraction failed for ${sourceClipName}. Assuming silent.`, e)
+        }
+
+        // Pass 3: Mux
+        if (onStatusUpdate) onStatusUpdate(`Muxing clip ${i + 1}/${validClips.length}...`)
+        
+        const muxInputs = ['-i', videoTemp]
+        if (hasAudio) muxInputs.push('-i', audioTemp)
+        
+        const muxMaps = ['-map', '0:v:0']
+        if (hasAudio) muxMaps.push('-map', '1:a:0')
+
+        await this.ffmpeg.exec([
+          ...muxInputs,
+          ...muxMaps,
+          '-c', 'copy',
+          processedClipName
+        ])
+        
+        console.log(`[FFmpeg Combiner] Finished processing ${processedClipName}`)
+        
+        completedSteps++
+        reportOverallProgress()
+      }
+
+      // Step 2: Create concat file list
+      if (onStatusUpdate) onStatusUpdate('Preparing to combine clips...')
+      let fileListContent = ''
+      for (let i = 0; i < clips.length; i++) {
+        if (clips[i] && clips[i].source) {
+          fileListContent += `file 'processed_clip_${i}.mp4'\n`
+        }
+      }
+      await this.ffmpeg.writeFile('filelist.txt', new TextEncoder().encode(fileListContent))
+
+      // Step 3: Concatenate all clips
+      if (onStatusUpdate) onStatusUpdate('Combining clips...')
+      await this.ffmpeg.exec([
+        '-f', 'concat',
+        '-safe', '0',
+        '-i', 'filelist.txt',
+        '-c', 'copy',
+        '-movflags', '+faststart',
+        'final_output.mp4'
+      ])
+      
+      completedSteps++
+      reportOverallProgress(100)
+
+      // Read final output
+      if (onStatusUpdate) onStatusUpdate('Finalizing...')
+      const data = await this.ffmpeg.readFile('final_output.mp4')
+
+      completedSteps++
+      reportOverallProgress(100)
+      
+      if (onStatusUpdate) onStatusUpdate('Complete!')
+
+      // Return as Blob
+      return new Blob([data.buffer], { type: 'video/mp4' })
+    } catch (error) {
+      console.error('FFmpeg combineVideos error:', error)
+      throw error
+    } finally {
+      // --- Guaranteed Cleanup ---
+      if (onStatusUpdate) onStatusUpdate('Cleaning up virtual files...')
+      for (const fileName of filesToClean) {
+        try {
+          await this.ffmpeg.deleteFile(fileName)
+        } catch (e) {
+          // Ignore errors for files that might not have been created
+        }
+      }
+      if (onStatusUpdate) onStatusUpdate('Cleanup complete.')
+    }
   }
 }
 

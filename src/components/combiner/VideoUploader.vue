@@ -1,0 +1,448 @@
+<template>
+  <div class="video-uploader">
+    <div class="upload-area" @click="triggerFileInput" @dragover.prevent @drop.prevent="handleDrop">
+      <input
+        ref="fileInput"
+        type="file"
+        accept="video/*"
+        multiple
+        @change="handleFileSelect"
+        style="display: none"
+      />
+      <div class="upload-prompt">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"></rect>
+          <line x1="7" y1="2" x2="7" y2="22"></line>
+          <line x1="17" y1="2" x2="17" y2="22"></line>
+          <line x1="2" y1="12" x2="22" y2="12"></line>
+          <line x1="2" y1="7" x2="7" y2="7"></line>
+          <line x1="2" y1="17" x2="7" y2="17"></line>
+          <line x1="17" y1="17" x2="22" y2="17"></line>
+          <line x1="17" y1="7" x2="22" y2="7"></line>
+        </svg>
+        <p>Click or drag video clips here</p>
+        <span class="hint">Supports MP4, WebM, MOV, AVI, MKV</span>
+      </div>
+    </div>
+    
+    <div v-if="store.videoSources.length > 0" class="clips-list">
+      <h3>Available Clips ({{ store.videoSources.length }})</h3>
+      <p class="drag-hint">Drag clips onto the timeline below, or click the + button to add.</p>
+      <div class="clips-scroll-container">
+        <div
+          class="clip-item"
+          v-for="source in store.videoSources"
+          :key="source.sourceId"
+          :class="{ selected: selectedSourceId === source.sourceId }"
+          draggable="true"
+          @dragstart="handleDragStart($event, source.sourceId)"
+          @click="selectForPreview(source)"
+        >
+          <div class="color-swatch" :style="{ backgroundColor: source.color }"></div>
+          <div class="clip-info">
+            <div class="filename">{{ source.name }}</div>
+            <div class="details">
+              <span>Duration: {{ formatDuration(source.duration) }}</span>
+            </div>
+          </div>
+          <button @click.stop="addToTimeline(source.sourceId)" class="add-btn" title="Add to timeline">+</button>
+          <button @click.stop="removeVideoSource(source.sourceId)" class="remove-btn" title="Remove source">×</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="previewUrl" class="video-preview">
+      <div class="preview-header">
+        <h3>Preview</h3>
+        <button @click="clearPreview" class="close-preview-btn">×</button>
+      </div>
+      <video :src="previewUrl" controls autoplay muted class="preview-player"></video>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, onUnmounted } from 'vue'
+import { useCombinerStore, type VideoSource } from '../../stores/combiner'
+
+const store = useCombinerStore()
+const fileInput = ref<HTMLInputElement | null>(null)
+const selectedSourceId = ref<string | null>(null)
+const previewUrl = ref<string | null>(null)
+
+const triggerFileInput = () => {
+  fileInput.value?.click()
+}
+
+const handleFileSelect = (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const files = Array.from(target.files || [])
+  files.forEach(file => loadVideoFile(file))
+  // Reset input to allow re-uploading same file
+  if (target) target.value = ''
+}
+
+const handleDrop = (event: DragEvent) => {
+  const files = Array.from(event.dataTransfer?.files || [])
+  files
+    .filter(file => file.type.startsWith('video/'))
+    .forEach(file => loadVideoFile(file))
+}
+
+const loadVideoFile = (file: File) => {
+  const video = document.createElement('video')
+  const url = URL.createObjectURL(file)
+  
+  video.addEventListener('loadedmetadata', () => {
+    store.addVideoSource(file, video.duration)
+    URL.revokeObjectURL(url)
+  })
+  
+  video.addEventListener('error', () => {
+    alert(`Error loading video file: ${file.name}`)
+    URL.revokeObjectURL(url)
+  })
+  
+  video.src = url
+}
+
+const handleDragStart = (event: DragEvent, sourceId: string) => {
+  if (event.dataTransfer) {
+    event.dataTransfer.setData('text/plain', sourceId)
+    event.dataTransfer.effectAllowed = 'copy'
+  }
+}
+
+const addToTimeline = (sourceId: string) => {
+  store.addToTimeline(sourceId)
+}
+
+const removeVideoSource = (sourceId: string) => {
+  if (confirm('Are you sure you want to remove this video source and all its clips from the timeline?')) {
+    if (selectedSourceId.value === sourceId) {
+      clearPreview()
+    }
+    store.removeVideoSource(sourceId)
+  }
+}
+
+const selectForPreview = (source: VideoSource) => {
+  if (selectedSourceId.value === source.sourceId) {
+    clearPreview()
+    return
+  }
+  
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+  }
+  
+  selectedSourceId.value = source.sourceId
+  previewUrl.value = URL.createObjectURL(source.file)
+}
+
+const clearPreview = () => {
+  selectedSourceId.value = null
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+    previewUrl.value = null
+  }
+}
+
+onUnmounted(() => {
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+  }
+})
+
+const formatDuration = (seconds: number): string => {
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.floor(seconds % 60)
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+</script>
+
+<style scoped>
+.video-uploader {
+  width: 100%;
+}
+
+.upload-area {
+  border: 2px dashed #42b883;
+  border-radius: 8px;
+  padding: 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  background: rgba(66, 184, 131, 0.05);
+}
+
+.upload-area:hover {
+  border-color: #35a372;
+  background: rgba(66, 184, 131, 0.1);
+}
+
+.upload-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  color: #42b883;
+}
+
+.upload-prompt svg {
+  color: #42b883;
+}
+
+.upload-prompt p {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+
+.hint {
+  font-size: 0.9rem;
+  color: #888;
+}
+
+.drag-hint {
+  font-size: 0.9rem;
+  color: #666;
+  text-align: center;
+  margin-bottom: 1rem;
+}
+
+.clips-list {
+  margin-top: 1.5rem;
+}
+
+.clips-scroll-container {
+  max-height: 380px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.clips-scroll-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.clips-scroll-container::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 3px;
+}
+
+.clips-scroll-container::-webkit-scrollbar-thumb {
+  background: rgba(66, 184, 131, 0.5);
+  border-radius: 3px;
+}
+
+.clips-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: rgba(66, 184, 131, 0.8);
+}
+
+.clips-list h3 {
+  margin: 0 0 1rem 0;
+  color: #213547;
+  font-size: 1rem;
+}
+
+.clip-item {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem;
+  background: rgba(66, 184, 131, 0.05);
+  border: 1px solid rgba(66, 184, 131, 0.2);
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  transition: all 0.2s ease;
+  cursor: grab;
+}
+
+.clip-item:hover {
+  background: rgba(66, 184, 131, 0.1);
+  transform: translateY(-2px);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.clip-item:active {
+  cursor: grabbing;
+  transform: scale(0.98);
+}
+
+.clip-item.selected {
+  background: rgba(66, 184, 131, 0.2);
+  border-color: #42b883;
+  box-shadow: 0 0 0 2px rgba(66, 184, 131, 0.2);
+}
+
+.video-preview {
+  margin-top: 1.5rem;
+  background: rgba(0, 0, 0, 0.05);
+  padding: 1rem;
+  border-radius: 8px;
+  animation: fadeIn 0.3s ease;
+}
+
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.preview-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: #213547;
+}
+
+.close-preview-btn {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #666;
+  padding: 0;
+  line-height: 1;
+}
+
+.close-preview-btn:hover {
+  color: #ff4444;
+}
+
+.preview-player {
+  width: 100%;
+  max-height: 300px;
+  background: #000;
+  border-radius: 4px;
+}
+
+.color-swatch {
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  border: 1px solid rgba(0,0,0,0.1);
+}
+
+.clip-info {
+  flex: 1;
+  text-align: left;
+  min-width: 0;
+}
+
+.filename {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: #213547;
+}
+
+.details {
+  font-size: 0.85rem;
+  color: #666;
+}
+
+.add-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: #42b883;
+  color: white;
+  border-radius: 50%;
+  font-size: 1.3rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.add-btn:hover {
+  background: #35a372;
+}
+
+.remove-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: #ff4444;
+  color: white;
+  border-radius: 50%;
+  font-size: 1.3rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.remove-btn:hover {
+  background: #cc0000;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-color-scheme: dark) {
+  .hint {
+    color: #aaa;
+  }
+
+  .drag-hint {
+    color: #aaa;
+  }
+
+  .clips-list h3,
+  .filename {
+    color: #fff;
+  }
+  
+  .details {
+    color: #aaa;
+  }
+
+  .clip-item {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .clip-item:hover {
+    background: rgba(255, 255, 255, 0.12);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+  }
+
+  .clip-item.selected {
+    background: rgba(66, 184, 131, 0.25);
+    border-color: #42b883;
+  }
+
+  .video-preview {
+    background: rgba(255, 255, 255, 0.05);
+    border-top-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .preview-header h3 {
+    color: #fff;
+  }
+
+  .close-preview-btn {
+    color: #aaa;
+  }
+
+  .close-preview-btn:hover {
+    color: #ff6666;
+  }
+
+  .color-swatch {
+    border-color: rgba(255,255,255,0.2);
+  }
+}
+</style>
