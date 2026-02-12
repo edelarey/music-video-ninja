@@ -298,13 +298,13 @@ class FFmpegService {
         ])
 
         // Pass 2: Audio Only (Extract & Normalize)
-        // We use try/catch to handle clips with no audio gracefully
-        let hasAudio = false
+        // Ensure EVERY clip has an audio track for successful concatenation
+        let audioSuccess = false
+        
         try {
           if (onStatusUpdate) onStatusUpdate(`Encoding Audio ${i + 1}/${validClips.length}...`)
           
-          // Check if audio stream exists implicitly by trying to process it
-          // Force stereo and 44.1kHz for consistent concatenation
+          // Attempt to extract and normalize audio from source
           const audioRes = await this.ffmpeg.exec([
             '-i', sourceClipName,
             '-vn', // No Video
@@ -315,27 +315,52 @@ class FFmpegService {
             audioTemp
           ])
           
-          // ffmpeg.exec returns 0 on success
           if (audioRes === 0) {
-             hasAudio = true
+             audioSuccess = true
           }
         } catch (e) {
-           console.warn(`[FFmpeg Combiner] Audio extraction failed for ${sourceClipName}. Assuming silent.`, e)
+           console.warn(`[FFmpeg Combiner] Audio extraction failed for ${sourceClipName}.`, e)
+        }
+
+        // If extraction failed (no audio in source), generate silence
+        if (!audioSuccess) {
+           if (onStatusUpdate) onStatusUpdate(`Generating silence for clip ${i + 1}/${validClips.length}...`)
+           console.log(`[FFmpeg Combiner] Generating silence for ${sourceClipName} (${clip.source.duration}s)`)
+           
+           try {
+             await this.ffmpeg.exec([
+                '-f', 'lavfi',
+                '-i', 'anullsrc=r=44100:cl=stereo',
+                '-t', clip.source.duration.toString(),
+                '-c:a', 'aac',
+                '-b:a', '192k',
+                '-ac', '2',
+                '-ar', '44100',
+                audioTemp
+             ])
+             audioSuccess = true
+           } catch (e) {
+             console.error(`[FFmpeg Combiner] Failed to generate silence for ${sourceClipName}`, e)
+           }
         }
 
         // Pass 3: Mux
+        // Always mux video and audio (real or silent) to ensure consistent streams
         if (onStatusUpdate) onStatusUpdate(`Muxing clip ${i + 1}/${validClips.length}...`)
         
         const muxInputs = ['-i', videoTemp]
-        if (hasAudio) muxInputs.push('-i', audioTemp)
-        
         const muxMaps = ['-map', '0:v:0']
-        if (hasAudio) muxMaps.push('-map', '1:a:0')
-
+        
+        if (audioSuccess) {
+            muxInputs.push('-i', audioTemp)
+            muxMaps.push('-map', '1:a:0')
+        }
+        
         await this.ffmpeg.exec([
           ...muxInputs,
           ...muxMaps,
           '-c', 'copy',
+          '-shortest', // Ensure we don't extend beyond video if silence is slightly long
           processedClipName
         ])
         
