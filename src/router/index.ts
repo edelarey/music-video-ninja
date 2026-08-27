@@ -3,6 +3,7 @@ import Home from '../views/Home.vue'
 import About from '../views/About.vue'
 import VideoCombiner from '../views/VideoCombiner.vue'
 import VideoScaler from '../views/VideoScaler.vue'
+import WavToMp3 from '../views/WavToMp3.vue'
 
 const routes = [
   {
@@ -19,6 +20,11 @@ const routes = [
     path: '/scaler',
     name: 'VideoScaler',
     component: VideoScaler
+  },
+  {
+    path: '/wav-to-mp3',
+    name: 'WavToMp3',
+    component: WavToMp3
   },
   {
     path: '/about',

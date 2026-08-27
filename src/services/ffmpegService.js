@@ -506,6 +506,69 @@ class FFmpegService {
       }
     }
   }
+
+  /**
+   * Convert a WAV file to a high-quality MP3.
+   * Matches: ffmpeg -i input.wav -c:a libmp3lame -b:a 320k -ar 44100 -ac 2 output.mp3
+   * @param {File} file - Source WAV file
+   * @param {number} duration - Source duration in seconds
+   * @param {Function} onProgress - Progress callback (percentage)
+   * @param {Function} onStatusUpdate - Status text callback
+   * @returns {Promise<Blob>} - MP3 as a Blob
+   */
+  async convertWavToMp3(file, duration, onProgress, onStatusUpdate) {
+    if (!this.ffmpeg || !this.loaded) {
+      throw new Error('FFmpeg not loaded')
+    }
+
+    const sourceName = 'convert_source.wav'
+    const outputName = 'convert_output.mp3'
+    const filesToClean = new Set([sourceName, outputName])
+
+    try {
+      if (onStatusUpdate) onStatusUpdate('Loading WAV...')
+      const data = new Uint8Array(await file.arrayBuffer())
+      await this.ffmpeg.writeFile(sourceName, data)
+
+      this._mp3Duration = duration
+      this._onProgress = onProgress
+
+      if (onStatusUpdate) onStatusUpdate('Encoding MP3 (320 kbps)...')
+      const result = await this.ffmpeg.exec([
+        '-i', sourceName,
+        '-c:a', 'libmp3lame',
+        '-b:a', '320k',
+        '-ar', '44100',
+        '-ac', '2',
+        outputName
+      ])
+
+      if (typeof result === 'number' && result !== 0) {
+        throw new Error('FFmpeg MP3 encode failed')
+      }
+
+      if (onStatusUpdate) onStatusUpdate('Finalizing...')
+      const output = await this.ffmpeg.readFile(outputName)
+      if (onProgress) onProgress(100)
+      if (onStatusUpdate) onStatusUpdate('Complete!')
+
+      return new Blob([output.buffer], { type: 'audio/mpeg' })
+    } catch (error) {
+      console.error('FFmpeg convertWavToMp3 error:', error)
+      throw error
+    } finally {
+      this._mp3Duration = 0
+      this._onProgress = null
+      if (onStatusUpdate) onStatusUpdate('Cleaning up virtual files...')
+      for (const fileName of filesToClean) {
+        try {
+          await this.ffmpeg.deleteFile(fileName)
+        } catch (e) {
+          // Ignore missing files
+        }
+      }
+    }
+  }
 }
 
 export const ffmpegService = new FFmpegService()

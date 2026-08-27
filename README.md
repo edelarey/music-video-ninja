@@ -1,6 +1,6 @@
 # 🪃 Loop Jitsu
 
-A **100% client-side** Vue 3 video toolkit. Create looped music videos with a custom MP3 soundtrack, stitch clips into one file, or batch upscale/downscale videos — all in the browser with FFmpeg WebAssembly. Nothing is uploaded to a server.
+A **100% client-side** Vue 3 video and audio toolkit. Create looped music videos with a custom MP3 soundtrack, stitch clips into one file, batch upscale/downscale videos, or convert WAV to high-quality MP3 — all in the browser with FFmpeg WebAssembly. Nothing is uploaded to a server.
 
 ## ✨ Features
 
@@ -26,10 +26,16 @@ A **100% client-side** Vue 3 video toolkit. Create looped music videos with a cu
 - **🖼️ Letterbox**: Non-16:9 sources are padded to the target frame.
 - **📥 Per-file download**: Download each result, or download the whole completed batch.
 
+### WAV to MP3 (`/wav-to-mp3`)
+
+- **🎵 Batch convert**: Select one or more `.wav` files and encode each independently.
+- **💎 High quality**: `libmp3lame` at **320 kbps CBR**, **44.1 kHz**, stereo — the same settings as `ffmpeg -i input.wav -c:a libmp3lame -b:a 320k -ar 44100 -ac 2 output.mp3`.
+- **📥 Per-file download**: Download each MP3, or download the whole completed batch.
+
 Shared across every tool:
 
 - **⚡ Client-Side Processing**: All encoding happens in your browser — no server uploads.
-- **📥 One-Click Download**: Finished MP4s download locally.
+- **📥 One-Click Download**: Finished files download locally.
 
 ## 🚀 Getting Started
 
@@ -78,6 +84,12 @@ npm run preview
 1. **Select videos**: Click or drag a list of files into the uploader. Each row shows duration, current size (for example `480p · 854×480`), and whether the conversion is an upscale, downscale, or already at the target.
 2. **Choose a target**: Select 144p–1080p. Typical use is 480p/720p → 1080p or the reverse.
 3. **Scale & download**: Click **Scale Videos**. Files are processed one at a time. Download each result, or use **Download all** when the batch finishes. Videos already at the target resolution are copied rather than re-encoded.
+
+### WAV to MP3
+
+1. **Select WAV files**: Click or drag one or more `.wav` files into the uploader.
+2. **Convert**: Click **Convert to MP3**. Each file is encoded to `libmp3lame` 320 kbps / 44.1 kHz stereo.
+3. **Download**: Save each MP3, or use **Download all** when the batch finishes.
 
 ## 🏗️ Technical Architecture
 
@@ -138,6 +150,12 @@ This architecture ensures stability and performance, even when creating long vid
 
 **Batch Scaler** runs the same scale/pad/mux path on one file at a time so WASM memory stays bounded. Lanczos scaling is used for cleaner upscales. Videos whose width and height already match the target are skipped.
 
+**WAV to MP3** encodes each file with `libmp3lame` at 320 kbps CBR, 44.1 kHz, stereo:
+
+```bash
+ffmpeg -i input.wav -c:a libmp3lame -b:a 320k -ar 44100 -ac 2 output.mp3
+```
+
 ### Project Structure
 
 ```
@@ -153,22 +171,27 @@ loop-jitsu/
 │   │   │   ├── CombinerTimeline.vue   # Drag-and-drop sequence
 │   │   │   ├── ResolutionSelector.vue # Shared 16:9 resolution picker
 │   │   │   └── CombineButton.vue      # Combine + download
-│   │   └── scaler/
-│   │       ├── ScalerUploader.vue     # Batch file list
-│   │       └── ScaleButton.vue        # Batch scale + download
+│   │   ├── scaler/
+│   │   │   ├── ScalerUploader.vue     # Batch file list
+│   │   │   └── ScaleButton.vue        # Batch scale + download
+│   │   └── converter/
+│   │       ├── WavUploader.vue        # WAV file list
+│   │       └── ConvertButton.vue      # Batch WAV → MP3
 │   ├── const/
 │   │   └── resolutions.ts             # Shared 144p–1080p map
 │   ├── services/
-│   │   ├── ffmpegService.js           # FFmpeg render / combine / scale
+│   │   ├── ffmpegService.js           # FFmpeg render / combine / scale / convert
 │   │   └── ffmpegService.d.ts
 │   ├── stores/
 │   │   ├── editor.ts                  # Music video state
 │   │   ├── combiner.ts                # Combiner state
-│   │   └── scaler.ts                  # Batch scaler state
+│   │   ├── scaler.ts                  # Batch scaler state
+│   │   └── converter.ts               # WAV → MP3 state
 │   ├── views/
 │   │   ├── Home.vue                   # Music video page
 │   │   ├── VideoCombiner.vue          # Combiner page
 │   │   ├── VideoScaler.vue            # Batch scaler page
+│   │   ├── WavToMp3.vue               # WAV → MP3 page
 │   │   └── About.vue
 │   ├── router/
 │   │   └── index.ts

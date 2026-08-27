@@ -2,10 +2,10 @@
   <div class="about-page">
     <h2>About Loop Jitsu</h2>
     <p>
-      Loop Jitsu is a client-side video toolkit that runs entirely in your web browser. Use it to
-      build looped music videos synced to an MP3, combine clips into one file, or batch
-      upscale/downscale a list of videos. Because all processing happens on your computer, your
-      files remain private and secure.
+      Loop Jitsu is a client-side video and audio toolkit that runs entirely in your web browser.
+      Use it to build looped music videos synced to an MP3, combine clips into one file, batch
+      upscale/downscale videos, or convert WAV files to high-quality MP3s. Because all processing
+      happens on your computer, your files remain private and secure.
     </p>
 
     <h3>How It Works</h3>
@@ -111,6 +111,26 @@
     </ol>
     <p>
       <router-link to="/scaler" class="inline-link">Open Batch Scaler →</router-link>
+    </p>
+
+    <h3>WAV to MP3</h3>
+    <p>
+      Convert uncompressed WAV files to high-quality MP3s in the browser. Encoding matches this
+      command: <strong>libmp3lame</strong>, <strong>320 kbps</strong>, <strong>44.1 kHz</strong>,
+      stereo.
+    </p>
+    <ol>
+      <li>
+        <strong>Select WAV files:</strong> Click or drag one or more <strong>.wav</strong> files
+        into the uploader. Each row shows duration and file size. Click a file to preview it.
+      </li>
+      <li>
+        <strong>Convert:</strong> Click <strong>Convert to MP3</strong>. Files are encoded one at
+        a time. Download each MP3, or use <strong>Download all</strong> when the batch finishes.
+      </li>
+    </ol>
+    <p>
+      <router-link to="/wav-to-mp3" class="inline-link">Open WAV to MP3 →</router-link>
     </p>
 
     <router-link to="/" class="back-link">← Back to Editor</router-link>
