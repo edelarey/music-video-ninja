@@ -6,7 +6,8 @@
         v-for="res in resolutions"
         :key="res.value"
         class="resolution-btn"
-        :class="{ active: store.selectedResolution === res.value }"
+        :class="{ active: modelValue === res.value }"
+        :disabled="disabled"
         @click="selectResolution(res.value)"
       >
         <span class="res-label">{{ res.label }}</span>
@@ -14,15 +15,22 @@
       </button>
     </div>
     <p class="resolution-info">
-      Output: {{ store.resolutionConfig.width }}×{{ store.resolutionConfig.height }} (16:9)
+      Output: {{ RESOLUTION_MAP[modelValue].width }}×{{ RESOLUTION_MAP[modelValue].height }} (16:9)
     </p>
   </div>
 </template>
 
 <script setup lang="ts">
-import { useCombinerStore, RESOLUTION_MAP, type Resolution } from '../../stores/combiner'
+import { RESOLUTION_MAP, type Resolution } from '../../const/resolutions'
 
-const store = useCombinerStore()
+defineProps<{
+  modelValue: Resolution
+  disabled?: boolean
+}>()
+
+const emit = defineEmits<{
+  'update:modelValue': [value: Resolution]
+}>()
 
 const resolutions = Object.entries(RESOLUTION_MAP).map(([value, config]) => ({
   value: Number(value) as Resolution,
@@ -32,7 +40,7 @@ const resolutions = Object.entries(RESOLUTION_MAP).map(([value, config]) => ({
 }))
 
 const selectResolution = (resolution: Resolution) => {
-  store.setResolution(resolution)
+  emit('update:modelValue', resolution)
 }
 </script>
 
@@ -76,6 +84,11 @@ const selectResolution = (resolution: Resolution) => {
   background: #646cff;
   border-color: #646cff;
   color: white;
+}
+
+.resolution-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .res-label {

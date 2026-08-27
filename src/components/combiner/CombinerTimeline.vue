@@ -102,7 +102,7 @@ const handleClipDragOver = (event: DragEvent, index: number) => {
   }
 }
 
-const handleClipDrop = (event: DragEvent, toIndex: number) => {
+const handleClipDrop = (_event: DragEvent, toIndex: number) => {
   if (draggedClipIndex.value !== null && draggedClipIndex.value !== toIndex) {
     store.reorderTimeline(draggedClipIndex.value, toIndex)
   }

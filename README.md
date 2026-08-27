@@ -1,16 +1,35 @@
 # 🪃 Loop Jitsu
 
-A **100% client-side** Vue 3 video editor that lets you create professional video mashups with custom audio tracks. Built with Vite, TypeScript, and powered by FFmpeg WebAssembly.
+A **100% client-side** Vue 3 video toolkit. Create looped music videos with a custom MP3 soundtrack, stitch clips into one file, or batch upscale/downscale videos — all in the browser with FFmpeg WebAssembly. Nothing is uploaded to a server.
 
 ## ✨ Features
+
+### Music Video editor (`/`)
 
 - **🎵 MP3 Audio Track**: Upload an MP3 file as your soundtrack.
 - **🎬 Multiple Video Clips**: Add multiple MP4 clips to your project.
 - **🌊 Interactive Timeline**: Visual waveform with drag-and-drop regions for precise clip positioning.
 - **🔄 Automatic Looping**: Video clips automatically loop to fill their assigned timeline section.
 - **🔇 Audio Control**: Input video audio is muted, using only your MP3 soundtrack.
-- **⚡ Client-Side Processing**: All processing happens in your browser—no server uploads!
-- **📥 One-Click Download**: Render and download your final MP4.
+
+### Video Combiner (`/combiner`)
+
+- **📎 Arrange clips**: Upload clips, then drag or add them onto a timeline in any order.
+- **🔁 Repeat clips**: The same source can appear more than once in the sequence.
+- **📐 Output resolution**: Re-encode the result to 144p through 1080p (16:9, letterboxed).
+- **🔊 Keep clip audio**: Sequential audio from each clip is preserved.
+
+### Batch Scaler (`/scaler`)
+
+- **📋 Multi-file queue**: Select a list of videos and convert each one independently.
+- **⬆️⬇️ Up or down**: Upscale 480p/720p to 1080p, or downscale 1080p back to 720p/480p (and other 16:9 sizes).
+- **🖼️ Letterbox**: Non-16:9 sources are padded to the target frame.
+- **📥 Per-file download**: Download each result, or download the whole completed batch.
+
+Shared across every tool:
+
+- **⚡ Client-Side Processing**: All encoding happens in your browser — no server uploads.
+- **📥 One-Click Download**: Finished MP4s download locally.
 
 ## 🚀 Getting Started
 
@@ -26,7 +45,7 @@ A **100% client-side** Vue 3 video editor that lets you create professional vide
 npm install
 
 # Start development server
-npm run dev
+npm start
 ```
 
 The app will be available at `http://localhost:5173`.
@@ -40,10 +59,25 @@ npm run preview
 
 ## 🎯 How to Use
 
-1.  **Upload Audio**: Click or drag an MP3 file into the audio uploader.
-2.  **Upload Video Clips**: Click or drag multiple MP4 files into the video uploader.
-3.  **Adjust Timeline**: Drag and resize the colored regions on the waveform to position your clips.
-4.  **Render Video**: Click "Render Video" to start processing. The progress bar will show the status, and your video will automatically download when complete.
+### Music Video
+
+1. **Upload Audio**: Click or drag an MP3 file into the audio uploader.
+2. **Upload Video Clips**: Click or drag multiple MP4 files into the video uploader.
+3. **Adjust Timeline**: Drag and resize the colored regions on the waveform to position your clips.
+4. **Render Video**: Click "Render Video" to start processing. The progress bar will show the status, and your video will automatically download when complete.
+
+### Video Combiner
+
+1. **Upload clips**: Add one or more videos (MP4, WebM, MOV, AVI, MKV).
+2. **Arrange the timeline**: Drag clips onto the timeline, click **+** to append, or reorder by dragging. The same clip can be added more than once.
+3. **Pick a resolution**: Choose 144p–1080p. Every clip is re-encoded to that 16:9 size.
+4. **Combine**: Click **Combine Videos**. The stitched MP4 downloads when encoding finishes.
+
+### Batch Scaler
+
+1. **Select videos**: Click or drag a list of files into the uploader. Each row shows duration, current size (for example `480p · 854×480`), and whether the conversion is an upscale, downscale, or already at the target.
+2. **Choose a target**: Select 144p–1080p. Typical use is 480p/720p → 1080p or the reverse.
+3. **Scale & download**: Click **Scale Videos**. Files are processed one at a time. Download each result, or use **Download all** when the batch finishes. Videos already at the target resolution are copied rather than re-encoded.
 
 ## 🏗️ Technical Architecture
 
@@ -53,7 +87,7 @@ npm run preview
 - **TypeScript** - Type-safe development for components
 - **Vite** - Fast build tool and dev server
 - **Pinia** - State management
-- **Wavesurfer.js** - Interactive waveform visualization
+- **Wavesurfer.js** - Interactive waveform visualization (music video editor)
 - **FFmpeg.wasm** - Client-side video processing via `@ffmpeg/ffmpeg`
 
 ### The FFmpeg Rendering Pipeline
@@ -98,25 +132,50 @@ ffmpeg -i stitched.mp4 -i audio.mp3 -map 0:v:0 -map 1:a:0 -c:v copy \
 
 This architecture ensures stability and performance, even when creating long videos from short, looping clips.
 
+### Combiner and Scaler
+
+**Video Combiner** re-encodes each timeline clip to the chosen 16:9 size (scale + pad), muxes original audio (or silence), then concatenates with the concat demuxer.
+
+**Batch Scaler** runs the same scale/pad/mux path on one file at a time so WASM memory stays bounded. Lanczos scaling is used for cleaner upscales. Videos whose width and height already match the target are skipped.
+
 ### Project Structure
 
 ```
 loop-jitsu/
 ├── src/
 │   ├── components/
-│   │   ├── MP3Uploader.vue       # Audio file upload
-│   │   ├── MP4Uploader.vue       # Video clips upload
-│   │   ├── WaveformTimeline.vue  # Interactive waveform
-│   │   └── RenderButton.vue      # Render control
+│   │   ├── MP3Uploader.vue            # Audio file upload
+│   │   ├── MP4Uploader.vue            # Video clips upload (music video)
+│   │   ├── WaveformTimeline.vue       # Interactive waveform
+│   │   ├── RenderButton.vue           # Music video render control
+│   │   ├── combiner/
+│   │   │   ├── VideoUploader.vue      # Combiner clip library
+│   │   │   ├── CombinerTimeline.vue   # Drag-and-drop sequence
+│   │   │   ├── ResolutionSelector.vue # Shared 16:9 resolution picker
+│   │   │   └── CombineButton.vue      # Combine + download
+│   │   └── scaler/
+│   │       ├── ScalerUploader.vue     # Batch file list
+│   │       └── ScaleButton.vue        # Batch scale + download
+│   ├── const/
+│   │   └── resolutions.ts             # Shared 144p–1080p map
 │   ├── services/
-│   │   ├── ffmpegService.js      # The core FFmpeg rendering logic
-│   │   └── ffmpegService.d.ts    # Type declarations for the JS service
+│   │   ├── ffmpegService.js           # FFmpeg render / combine / scale
+│   │   └── ffmpegService.d.ts
 │   ├── stores/
-│   │   └── editor.ts             # Pinia state management
-│   ├── App.vue                   # Main application
-│   ├── main.ts                   # App entry point
-│   └── style.css                 # Global styles
-├── vite.config.ts                # Vite configuration
+│   │   ├── editor.ts                  # Music video state
+│   │   ├── combiner.ts                # Combiner state
+│   │   └── scaler.ts                  # Batch scaler state
+│   ├── views/
+│   │   ├── Home.vue                   # Music video page
+│   │   ├── VideoCombiner.vue          # Combiner page
+│   │   ├── VideoScaler.vue            # Batch scaler page
+│   │   └── About.vue
+│   ├── router/
+│   │   └── index.ts
+│   ├── App.vue
+│   ├── main.ts
+│   └── style.css
+├── vite.config.ts
 └── package.json
 ```
 

@@ -401,6 +401,111 @@ class FFmpegService {
       if (onStatusUpdate) onStatusUpdate('Cleanup complete.')
     }
   }
+
+  /**
+   * Scale a single video to a target resolution (upscale or downscale).
+   * Letterboxes/pillarboxes to 16:9 and preserves audio when present.
+   * @param {File} file - Source video file
+   * @param {number} duration - Source duration in seconds
+   * @param {{ width: number, height: number }} resolution - Target resolution
+   * @param {Function} onProgress - Progress callback (percentage)
+   * @param {Function} onStatusUpdate - Status text callback
+   * @returns {Promise<Blob>} - Scaled video as a Blob
+   */
+  async scaleVideo(file, duration, resolution, onProgress, onStatusUpdate) {
+    if (!this.ffmpeg || !this.loaded) {
+      throw new Error('FFmpeg not loaded')
+    }
+
+    const { width, height } = resolution
+    const sourceName = 'scale_source.mp4'
+    const videoTemp = 'scale_video.mp4'
+    const outputName = 'scale_output.mp4'
+    const filesToClean = new Set([sourceName, videoTemp, outputName])
+
+    try {
+      if (onStatusUpdate) onStatusUpdate('Loading video...')
+      const data = new Uint8Array(await file.arrayBuffer())
+      await this.ffmpeg.writeFile(sourceName, data)
+
+      const scaleFilter = `scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p`
+
+      this._mp3Duration = duration
+      this._onProgress = onProgress
+
+      if (onStatusUpdate) onStatusUpdate('Scaling video...')
+      await this.ffmpeg.exec([
+        '-i', sourceName,
+        '-vf', scaleFilter,
+        '-an',
+        '-c:v', 'libx264',
+        '-preset', 'ultrafast',
+        '-crf', '23',
+        videoTemp
+      ])
+
+      if (onStatusUpdate) onStatusUpdate('Muxing audio...')
+
+      let muxSuccess = false
+      try {
+        const res = await this.ffmpeg.exec([
+          '-i', videoTemp,
+          '-i', sourceName,
+          '-map', '0:v:0',
+          '-map', '1:a:0',
+          '-c:v', 'copy',
+          '-c:a', 'aac',
+          '-b:a', '192k',
+          '-ac', '2',
+          '-ar', '44100',
+          '-shortest',
+          '-movflags', '+faststart',
+          outputName
+        ])
+        if (res === 0) muxSuccess = true
+      } catch (e) {
+        console.warn('[FFmpeg Scaler] Mux with source audio failed (possibly no audio track).', e)
+      }
+
+      if (!muxSuccess) {
+        if (onStatusUpdate) onStatusUpdate('Adding silent audio...')
+        await this.ffmpeg.exec([
+          '-i', videoTemp,
+          '-f', 'lavfi',
+          '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+          '-map', '0:v:0',
+          '-map', '1:a:0',
+          '-c:v', 'copy',
+          '-c:a', 'aac',
+          '-b:a', '192k',
+          '-shortest',
+          '-movflags', '+faststart',
+          outputName
+        ])
+      }
+
+      if (onStatusUpdate) onStatusUpdate('Finalizing...')
+      const output = await this.ffmpeg.readFile(outputName)
+      if (onProgress) onProgress(100)
+      if (onStatusUpdate) onStatusUpdate('Complete!')
+
+      return new Blob([output.buffer], { type: 'video/mp4' })
+    } catch (error) {
+      console.error('FFmpeg scaleVideo error:', error)
+      throw error
+    } finally {
+      this._mp3Duration = 0
+      this._onProgress = null
+      if (onStatusUpdate) onStatusUpdate('Cleaning up virtual files...')
+      for (const fileName of filesToClean) {
+        try {
+          await this.ffmpeg.deleteFile(fileName)
+        } catch (e) {
+          // Ignore missing files
+        }
+      }
+    }
+  }
 }
 
 export const ffmpegService = new FFmpegService()

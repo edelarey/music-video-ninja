@@ -25,7 +25,10 @@
     <section class="settings-section">
       <div class="settings-card">
         <h2>3. Output Settings</h2>
-        <ResolutionSelector />
+        <ResolutionSelector
+          :model-value="store.selectedResolution"
+          @update:model-value="store.setResolution"
+        />
       </div>
     </section>
 
@@ -41,6 +44,9 @@ import VideoUploader from '../components/combiner/VideoUploader.vue'
 import CombinerTimeline from '../components/combiner/CombinerTimeline.vue'
 import ResolutionSelector from '../components/combiner/ResolutionSelector.vue'
 import CombineButton from '../components/combiner/CombineButton.vue'
+import { useCombinerStore } from '../stores/combiner'
+
+const store = useCombinerStore()
 </script>
 
 <style scoped>

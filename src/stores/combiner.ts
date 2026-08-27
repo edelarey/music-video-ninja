@@ -1,5 +1,9 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { RESOLUTION_MAP, type Resolution } from '../const/resolutions'
+
+export type { Resolution, ResolutionConfig } from '../const/resolutions'
+export { RESOLUTION_MAP } from '../const/resolutions'
 
 export interface VideoSource {
   sourceId: string
@@ -13,23 +17,6 @@ export interface TimelineClip {
   id: string
   sourceId: string
   order: number
-}
-
-export type Resolution = 144 | 240 | 360 | 480 | 720 | 1080
-
-export interface ResolutionConfig {
-  label: string
-  width: number
-  height: number
-}
-
-export const RESOLUTION_MAP: Record<Resolution, ResolutionConfig> = {
-  144: { label: '144p', width: 256, height: 144 },
-  240: { label: '240p', width: 426, height: 240 },
-  360: { label: '360p', width: 640, height: 360 },
-  480: { label: '480p', width: 854, height: 480 },
-  720: { label: '720p', width: 1280, height: 720 },
-  1080: { label: '1080p', width: 1920, height: 1080 }
 }
 
 const CLIP_COLORS = [

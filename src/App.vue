@@ -6,6 +6,7 @@
       <nav>
         <router-link to="/" class="nav-link">Music Video</router-link>
         <router-link to="/combiner" class="nav-link">Video Combiner</router-link>
+        <router-link to="/scaler" class="nav-link">Batch Scaler</router-link>
         <router-link to="/about" class="nav-link">About</router-link>
       </nav>
     </header>
@@ -60,6 +61,7 @@ nav {
   margin-top: 1rem;
   display: flex;
   justify-content: center;
+  flex-wrap: wrap;
   gap: 0.5rem;
 }
 
