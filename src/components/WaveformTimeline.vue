@@ -63,18 +63,41 @@
           Clips on Timeline: {{ store.clips.length }} |
           Timeline Coverage: {{ formatDuration(store.totalClipsDuration) }}
         </p>
-        <p v-if="selectedClip?.source" class="selected-clip-info">
-          Selected: <span class="filename">{{ selectedClip.source.file.name }}</span>
-        </p>
-        <div v-if="selectedClip" class="clip-controls">
-          <label class="checkbox-label">
+      </div>
+
+      <div v-if="selectedClip?.source" class="selected-clip-details">
+        <div class="details-header">
+          <span class="details-label">Selected clip</span>
+          <span class="filename">{{ selectedClip.source.file.name }}</span>
+        </div>
+        <dl class="details-grid">
+          <div class="detail">
+            <dt>Length</dt>
+            <dd>{{ formatDuration(selectedClip.end - selectedClip.start) }}</dd>
+          </div>
+          <div class="detail">
+            <dt>Range</dt>
+            <dd>{{ formatDuration(selectedClip.start) }} – {{ formatDuration(selectedClip.end) }}</dd>
+          </div>
+          <div class="detail">
+            <dt>Source</dt>
+            <dd>{{ formatDuration(selectedClip.source.duration) }}</dd>
+          </div>
+        </dl>
+        <div class="clip-controls">
+          <label class="checkbox-label" :class="{ disabled: !pingPongAllowed }">
             <input
               type="checkbox"
-              :checked="selectedClip.loopMode === 'ping-pong'"
+              :checked="selectedClip.loopMode === 'ping-pong' && pingPongAllowed"
+              :disabled="!pingPongAllowed"
+              :title="pingPongAllowed ? 'Play forward then reverse' : `Unavailable for source clips ${PING_PONG_MAX_SOURCE_SECONDS} seconds or longer`"
               @change="(e) => updateLoopMode((e.target as HTMLInputElement).checked)"
             >
             <span>Ping-Pong Loop</span>
           </label>
+          <span v-if="!pingPongAllowed" class="ping-pong-hint">
+            Off for sources {{ PING_PONG_MAX_SOURCE_SECONDS }}s+
+          </span>
         </div>
       </div>
     </div>
@@ -85,7 +108,7 @@
 import { ref, onMounted, watch, onBeforeUnmount, computed } from 'vue'
 import WaveSurfer from 'wavesurfer.js'
 import RegionsPlugin from 'wavesurfer.js/dist/plugins/regions.js'
-import { useEditorStore } from '../stores/editor'
+import { useEditorStore, sourceSupportsPingPong, PING_PONG_MAX_SOURCE_SECONDS } from '../stores/editor'
 
 const store = useEditorStore()
 const waveformRef = ref<HTMLDivElement | null>(null)
@@ -103,12 +126,23 @@ const selectedClip = computed(() => {
   return store.clipsWithSource.find(c => c.id === selectedRegionId.value)
 })
 
+const pingPongAllowed = computed(() =>
+  sourceSupportsPingPong(selectedClip.value?.source?.duration)
+)
+
 const updateLoopMode = (isPingPong: boolean) => {
   if (!selectedRegionId.value) return
+  if (isPingPong && !pingPongAllowed.value) return
   store.updateClip(selectedRegionId.value, {
     loopMode: isPingPong ? 'ping-pong' : 'repeat'
   })
 }
+
+watch(selectedClip, (clip) => {
+  if (clip?.loopMode === 'ping-pong' && !sourceSupportsPingPong(clip.source?.duration)) {
+    store.updateClip(clip.id, { loopMode: 'repeat' })
+  }
+})
 
 const initWavesurfer = () => {
   if (!waveformRef.value || !store.mp3File) return
@@ -488,14 +522,69 @@ onBeforeUnmount(() => {
   color: #666;
 }
 
-.selected-clip-info .filename {
+.selected-clip-details {
+  margin-top: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: rgba(100, 108, 255, 0.08);
+  border: 1px solid rgba(100, 108, 255, 0.2);
+  border-radius: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.25rem;
+}
+
+.details-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.details-label {
+  font-size: 0.75rem;
   font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #888;
+}
+
+.filename {
+  font-weight: 600;
+  color: #213547;
+  word-break: break-all;
+}
+
+.details-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.5rem;
+  margin: 0;
+}
+
+.detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.detail dt {
+  font-size: 0.75rem;
+  color: #888;
+}
+
+.detail dd {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   color: #213547;
 }
 
 .clip-controls {
   display: flex;
   align-items: center;
+  gap: 0.5rem;
   margin-left: auto;
   padding: 0.25rem 0.75rem;
   background: rgba(100, 108, 255, 0.1);
@@ -512,8 +601,23 @@ onBeforeUnmount(() => {
   user-select: none;
 }
 
+.checkbox-label.disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 .checkbox-label input {
   cursor: pointer;
+}
+
+.checkbox-label.disabled input {
+  cursor: not-allowed;
+}
+
+.ping-pong-hint {
+  font-size: 0.75rem;
+  color: #888;
+  white-space: nowrap;
 }
 
 @media (max-width: 768px) {
@@ -549,8 +653,20 @@ onBeforeUnmount(() => {
     color: #aaa;
   }
 
-  .selected-clip-info .filename {
+  .selected-clip-details {
+    background: rgba(100, 108, 255, 0.12);
+    border-color: rgba(100, 108, 255, 0.25);
+  }
+
+  .filename,
+  .detail dd {
     color: #fff;
+  }
+
+  .details-label,
+  .detail dt,
+  .ping-pong-hint {
+    color: #aaa;
   }
 
   .checkbox-label {

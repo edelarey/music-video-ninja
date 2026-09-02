@@ -51,7 +51,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { useEditorStore } from '../stores/editor'
+import { useEditorStore, sourceSupportsPingPong } from '../stores/editor'
 import { ffmpegService } from '@/services/ffmpegService.js'
 
 const store = useEditorStore()
@@ -88,6 +88,9 @@ const handleRender = async () => {
         ...clip,
         start: currentTime,
         end: currentTime + newSegmentDuration,
+        originalStart: clip.start,
+        originalEnd: clip.end,
+        loopMode: sourceSupportsPingPong(clip.source?.duration) ? clip.loopMode : 'repeat',
       }
       
       currentTime += newSegmentDuration
@@ -127,7 +130,15 @@ const handleRender = async () => {
     }, 1000)
   } catch (error) {
     console.error('Render error:', error)
-    alert('Error rendering video. Check console for details.')
+    const message = error instanceof Error ? error.message : String(error)
+    const hasClipHint = /clip \d+|Ping-Pong Loop/i.test(message)
+    alert(
+      hasClipHint
+        ? message
+        : /OOM|memory|Aborted/i.test(message)
+          ? 'Render ran out of memory in the browser. Try turning off Ping-Pong Loop on longer clips, then render again.'
+          : 'Error rendering video. Check the console for details, then try again.'
+    )
     store.setRendering(false)
   }
 }

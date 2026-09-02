@@ -1,35 +1,109 @@
 import { FFmpeg } from '@ffmpeg/ffmpeg'
 import { toBlobURL } from '@ffmpeg/util'
+
+const H264_ENCODE = ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23']
+// Keep in sync with PING_PONG_MAX_SOURCE_SECONDS in the editor store
+const PING_PONG_MAX_SOURCE_SECONDS = 15
+
+function formatClock(seconds) {
+  const s = Math.max(0, Number(seconds) || 0)
+  const mins = Math.floor(s / 60)
+  const secs = Math.floor(s % 60)
+  return `${mins}:${String(secs).padStart(2, '0')}`
+}
+
+function clipLabel(clip, index) {
+  const name = clip?.source?.file?.name || clip?.source?.name || 'untitled clip'
+  const start = clip?.originalStart ?? clip?.start
+  const end = clip?.originalEnd ?? clip?.end
+  const range = Number.isFinite(start) && Number.isFinite(end)
+    ? `, ${formatClock(start)}–${formatClock(end)}`
+    : ''
+  return `clip ${index + 1} (${name}${range})`
+}
+
+function isOomError(error) {
+  if (error == null) return true
+  const text = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
+  return /OOM|out of memory|Aborted|RuntimeError|Cannot enlarge memory/i.test(text)
+}
+
+function clipFailureError(clip, index, error, stage) {
+  const label = clipLabel(clip, index)
+  const oom = isOomError(error)
+  if (stage === 'reverse') {
+    return new Error(
+      oom
+        ? `Ran out of memory reversing ${label}. Turn off Ping-Pong Loop for that segment and render again.`
+        : `Failed reversing ${label}. Turn off Ping-Pong Loop for that segment and render again.`
+    )
+  }
+  if (clip?.loopMode === 'ping-pong' && oom) {
+    return new Error(
+      `Ran out of memory processing ${label}. Turn off Ping-Pong Loop for that segment and render again.`
+    )
+  }
+  return new Error(
+    oom
+      ? `Ran out of memory processing ${label}.`
+      : `Failed processing ${label}.`
+  )
+}
+
 class FFmpegService {
   constructor() {
     this.ffmpeg = new FFmpeg()
     this.loaded = false
+    this._mp3Duration = 0
+    this._onProgress = null
   }
 
-  async load() {
-    if (this.loaded) return
-
-    this.ffmpeg.on('log', ({ message }) => {
-      // Filter out verbose progress messages from the general log
-      if (!message.startsWith('frame=')) {
-        console.log('[FFmpeg Log]', message)
+  attachListeners() {
+    this.ffmpeg.on('log', (event) => {
+      try {
+        const message = event?.message
+        if (typeof message !== 'string') return
+        if (!message.startsWith('frame=')) {
+          console.log('[FFmpeg Log]', message)
+        }
+      } catch {
+        // Logging must never fail an encode (wasm abort events can omit message)
       }
     })
 
-    // This progress listener is now driven by the audio duration for accuracy
-    // Only fires progress updates when _mp3Duration is set (i.e., during processVideo)
-    this.ffmpeg.on('progress', ({ time, progress }) => {
-      // Skip if _mp3Duration is not set (e.g., during combineVideos which handles its own progress)
+    this.ffmpeg.on('progress', ({ time } = {}) => {
       if (!this._mp3Duration || this._mp3Duration <= 0) return
-      
-      const timeInSeconds = time / 1000000;
-      // Log the ffmpeg progress in seconds for readability
+      if (typeof time !== 'number' || !Number.isFinite(time) || time < 0) return
+
+      const timeInSeconds = time / 1000000
+      // AV_NOPTS_VALUE shows up as ~9.22e12 seconds during reverse/copy
+      if (timeInSeconds > this._mp3Duration * 2) return
+
       console.log(`[FFmpeg Progress] Time: ${timeInSeconds.toFixed(2)}s / ${this._mp3Duration.toFixed(2)}s`)
       if (this._onProgress) {
         const percent = Math.min(100, Math.round((timeInSeconds / this._mp3Duration) * 100))
         this._onProgress(percent)
       }
     })
+  }
+
+  destroyInstance() {
+    try {
+      this.ffmpeg.terminate()
+    } catch {
+      // Worker may already be dead after OOM
+    }
+    this.ffmpeg = new FFmpeg()
+    this.loaded = false
+    this._mp3Duration = 0
+    this._onProgress = null
+  }
+
+  async load() {
+    if (this.loaded) return
+
+    this.ffmpeg = new FFmpeg()
+    this.attachListeners()
 
     console.log('Loading FFmpeg with @ffmpeg/core-mt...')
 
@@ -46,10 +120,25 @@ class FFmpegService {
       console.log('FFmpeg loaded successfully!')
     } catch (error) {
       console.error('Error loading FFmpeg:', error)
+      this.destroyInstance()
       throw error
     }
 
     this.loaded = true
+  }
+
+  async deleteFile(fileName) {
+    try {
+      await this.ffmpeg.deleteFile(fileName)
+    } catch {
+      // File may not exist
+    }
+  }
+
+  async deleteFiles(fileNames) {
+    for (const fileName of fileNames) {
+      if (fileName) await this.deleteFile(fileName)
+    }
   }
 
   async processVideo(
@@ -88,81 +177,113 @@ class FFmpegService {
         const loopListName = `looplist_${i}.txt`;
         const tempClipName = `temp_${i}.mp4`;
 
+        const usePingPong =
+          clip.loopMode === 'ping-pong' &&
+          Number(clip.source.duration) < PING_PONG_MAX_SOURCE_SECONDS
+
         filesToClean.add(sourceClipName).add(processedClipName).add(loopListName).add(tempClipName);
-        if (clip.loopMode === 'ping-pong') filesToClean.add(reversedClipName);
+        if (usePingPong) filesToClean.add(reversedClipName);
 
-        // Write original clip to filesystem
-        const clipData = new Uint8Array(await clip.source.file.arrayBuffer())
-        await this.ffmpeg.writeFile(sourceClipName, clipData)
+        try {
+          // Write original clip to filesystem
+          const clipData = new Uint8Array(await clip.source.file.arrayBuffer())
+          await this.ffmpeg.writeFile(sourceClipName, clipData)
 
-        // --- Definitive Strategy: Isolate Intensive Operations ---
-
-        // 1. Pre-process: Scale and mute the *short* source clip.
-        if (onStatusUpdate) onStatusUpdate(`Pre-processing clip ${i + 1}...`)
-        await this.ffmpeg.exec([
-          '-i', sourceClipName,
-          '-an',
-          '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p',
-          '-c:v', 'libx264',
-          '-preset', 'ultrafast',
-          '-crf', '23',
-          processedClipName
-        ])
-
-        // 1b. Create reversed clip if needed for ping-pong
-        if (clip.loopMode === 'ping-pong') {
-          if (onStatusUpdate) onStatusUpdate(`Creating reverse loop for clip ${i + 1}...`)
+          // 1. Pre-process: Scale and mute the *short* source clip.
+          if (onStatusUpdate) onStatusUpdate(`Pre-processing ${clipLabel(clip, i)}...`)
           await this.ffmpeg.exec([
-            '-i', processedClipName,
-            '-vf', 'reverse',
-            '-c:v', 'libx264',
-            '-preset', 'ultrafast',
-            '-crf', '23',
-            reversedClipName
+            '-i', sourceClipName,
+            '-an',
+            '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p',
+            ...H264_ENCODE,
+            processedClipName
           ])
-        }
 
-        // 2. Loop: Use the pre-processed clip (and optionally its reverse) with the efficient concat demuxer.
-        if (onStatusUpdate) onStatusUpdate(`Looping clip ${i + 1}...`)
-        const clipDuration = clip.source.duration
-        const loopCount = Math.ceil(segmentDuration / clipDuration)
-        let loopListContent = ''
-        for (let j = 0; j < loopCount; j++) {
-          if (clip.loopMode === 'ping-pong' && j % 2 === 1) {
-            loopListContent += `file '${reversedClipName}'\n`
-          } else {
-            loopListContent += `file '${processedClipName}'\n`
+          // Source is no longer needed after the scaled/muted copy exists
+          await this.deleteFile(sourceClipName)
+
+          // 1b. Create reversed clip if needed for ping-pong (skipped for sources 15s+)
+          if (usePingPong) {
+            if (onStatusUpdate) onStatusUpdate(`Creating reverse loop for ${clipLabel(clip, i)}...`)
+            try {
+              await this.ffmpeg.exec([
+                '-i', processedClipName,
+                '-vf', 'reverse',
+                '-an',
+                ...H264_ENCODE,
+                reversedClipName
+              ])
+            } catch (error) {
+              throw clipFailureError(clip, i, error, 'reverse')
+            }
           }
-        }
-        await this.ffmpeg.writeFile(loopListName, new TextEncoder().encode(loopListContent))
 
-        // 3. Final Segment: Create the final segment by stream-copying and trimming.
+          // 2. Loop: Use the pre-processed clip (and optionally its reverse) with the efficient concat demuxer.
+          if (onStatusUpdate) onStatusUpdate(`Looping ${clipLabel(clip, i)}...`)
+          const clipDuration = clip.source.duration
+          const loopCount = Math.max(1, Math.ceil(segmentDuration / clipDuration))
+          let loopListContent = ''
+          for (let j = 0; j < loopCount; j++) {
+            if (usePingPong && j % 2 === 1) {
+              loopListContent += `file '${reversedClipName}'\n`
+            } else {
+              loopListContent += `file '${processedClipName}'\n`
+            }
+          }
+          await this.ffmpeg.writeFile(loopListName, new TextEncoder().encode(loopListContent))
+
+          // 3. Final Segment: Create the final segment by stream-copying and trimming.
+          await this.ffmpeg.exec([
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', loopListName,
+            '-t', segmentDuration.toString(),
+            '-c', 'copy',
+            tempClipName
+          ])
+
+          // Keep only the trimmed segment; drop per-clip intermediates to free MEMFS
+          await this.deleteFiles([processedClipName, reversedClipName, loopListName])
+        } catch (error) {
+          if (error?.message?.includes('Turn off Ping-Pong Loop') || error?.message?.startsWith('Failed processing') || error?.message?.startsWith('Ran out of memory processing')) {
+            throw error
+          }
+          throw clipFailureError(clip, i, error, 'process')
+        }
+      }
+
+      // Step 2: Concat incrementally so MEMFS never holds every segment plus the stitch
+      if (onStatusUpdate) onStatusUpdate('Stitching clips together...')
+      const tempClips = []
+      for (let i = 0; i < clips.length; i++) {
+        if (clips[i] && clips[i].source) tempClips.push(`temp_${i}.mp4`)
+      }
+      if (tempClips.length === 0) {
+        throw new Error('No valid video clips to stitch')
+      }
+
+      let currentStitch = tempClips[0]
+      for (let i = 1; i < tempClips.length; i++) {
+        if (onStatusUpdate) onStatusUpdate(`Stitching clips together (${i + 1}/${tempClips.length})...`)
+        const outName = i === tempClips.length - 1 ? 'stitched.mp4' : `stitch_partial_${i}.mp4`
+        filesToClean.add(outName)
+        const listContent = `file '${currentStitch}'\nfile '${tempClips[i]}'\n`
+        await this.ffmpeg.writeFile('filelist.txt', new TextEncoder().encode(listContent))
         await this.ffmpeg.exec([
           '-f', 'concat',
           '-safe', '0',
-          '-i', loopListName,
-          '-t', segmentDuration.toString(),
+          '-i', 'filelist.txt',
           '-c', 'copy',
-          tempClipName
+          outName
         ])
+        await this.deleteFiles([currentStitch, tempClips[i]])
+        currentStitch = outName
       }
 
-      // Step 2: Create concat file list
-      if (onStatusUpdate) onStatusUpdate('Stitching clips together...')
-      let fileListContent = ''
-      for (let i = 0; i < clips.length; i++) {
-        fileListContent += `file 'temp_${i}.mp4'\n`
+      if (currentStitch !== 'stitched.mp4') {
+        await this.ffmpeg.exec(['-i', currentStitch, '-c', 'copy', 'stitched.mp4'])
+        await this.deleteFile(currentStitch)
       }
-      await this.ffmpeg.writeFile('filelist.txt', new TextEncoder().encode(fileListContent))
-
-      // Concatenate all clips
-      await this.ffmpeg.exec([
-        '-f', 'concat',
-        '-safe', '0',
-        '-i', 'filelist.txt',
-        '-c', 'copy',
-        'stitched.mp4'
-      ])
 
       // Step 3: Mux with MP3 audio
       if (onStatusUpdate) onStatusUpdate('Adding audio track...')
@@ -179,6 +300,8 @@ class FFmpegService {
         'final_output.mp4'
       ])
 
+      await this.deleteFiles(['stitched.mp4', 'audio.mp3', 'filelist.txt'])
+
       // Read final output
       if (onStatusUpdate) onStatusUpdate('Finalizing...')
       const data = await this.ffmpeg.readFile('final_output.mp4')
@@ -189,20 +312,16 @@ class FFmpegService {
       return new Blob([data.buffer], { type: 'video/mp4' })
     } catch (error) {
       console.error('FFmpeg processing error:', error)
+      this.destroyInstance()
       throw error
     } finally {
-      // --- Guaranteed Cleanup ---
-      // This block runs whether the process succeeds or fails, ensuring
-      // the virtual filesystem is always left clean.
-      if (onStatusUpdate) onStatusUpdate('Cleaning up virtual files...')
-      for (const fileName of filesToClean) {
-        try {
-          await this.ffmpeg.deleteFile(fileName)
-        } catch (e) {
-          // Ignore errors for files that might not have been created
-        }
+      this._mp3Duration = 0
+      this._onProgress = null
+      if (this.loaded) {
+        if (onStatusUpdate) onStatusUpdate('Cleaning up virtual files...')
+        await this.deleteFiles([...filesToClean])
+        if (onStatusUpdate) onStatusUpdate('Cleanup complete.')
       }
-      if (onStatusUpdate) onStatusUpdate('Cleanup complete.')
     }
   }
 

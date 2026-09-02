@@ -16,6 +16,13 @@ export interface VideoClip {
   loopMode: 'repeat' | 'ping-pong'
 }
 
+/** Reverse of a 15s 1080p clip OOMs in-browser FFmpeg, so ping-pong is capped below this. */
+export const PING_PONG_MAX_SOURCE_SECONDS = 15
+
+export function sourceSupportsPingPong(duration: number | undefined | null): boolean {
+  return typeof duration === 'number' && Number.isFinite(duration) && duration < PING_PONG_MAX_SOURCE_SECONDS
+}
+
 const CLIP_COLORS = [
   '#ff6b6b', '#f06595', '#cc5de8', '#845ef7', '#5c7cfa', '#339af0', '#22b8cf',
   '#20c997', '#51cf66', '#94d82d', '#fcc419', '#ff922b', '#ff6b6b', '#f783ac',
@@ -85,7 +92,14 @@ export const useEditorStore = defineStore('editor', () => {
     if (clip) {
       if (updates.start !== undefined) clip.start = updates.start
       if (updates.end !== undefined) clip.end = updates.end
-      if (updates.loopMode !== undefined) clip.loopMode = updates.loopMode
+      if (updates.loopMode !== undefined) {
+        if (updates.loopMode === 'ping-pong') {
+          const source = videoSources.value.find(s => s.sourceId === clip.sourceId)
+          clip.loopMode = sourceSupportsPingPong(source?.duration) ? 'ping-pong' : 'repeat'
+        } else {
+          clip.loopMode = updates.loopMode
+        }
+      }
     }
   }
 
