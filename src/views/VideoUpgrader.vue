@@ -2,8 +2,13 @@
   <main class="main">
     <section class="upload-section">
       <div class="upload-card">
-        <h2>1. Select Videos</h2>
-        <ScalerUploader />
+        <h2>1. Select Video</h2>
+        <p class="settings-copy">
+          Upgrade one finished music video (for example 720p → 1080p). Unlike
+          <router-link to="/scaler">Batch Scaler</router-link>, this page is for a single long
+          file and copies the original soundtrack instead of replacing or muting it.
+        </p>
+        <UpgradeUploader />
       </div>
     </section>
 
@@ -11,10 +16,9 @@
       <div class="settings-card">
         <h2>2. Target Resolution</h2>
         <p class="settings-copy">
-          Each video is re-encoded independently to this 16:9 size. Smaller sources are upscaled
-          (480p/720p → 1080p); larger sources are downscaled. Non-16:9 videos are letterboxed.
-          For one long finished video where you need to keep the soundtrack, use
-          <router-link to="/upgrade">HD Upgrade</router-link> instead.
+          Video is re-encoded to this 16:9 size with Lanczos scaling. Non-16:9 sources are
+          letterboxed. Audio is stream-copied from the source whenever the codec allows
+          (otherwise AAC 320k).
         </p>
         <ResolutionSelector
           :model-value="store.selectedResolution"
@@ -25,19 +29,19 @@
     </section>
 
     <section class="render-section">
-      <h2>3. Scale &amp; Download</h2>
-      <ScaleButton />
+      <h2>3. Upgrade &amp; Download</h2>
+      <UpgradeButton />
     </section>
   </main>
 </template>
 
 <script setup lang="ts">
-import ScalerUploader from '../components/scaler/ScalerUploader.vue'
-import ScaleButton from '../components/scaler/ScaleButton.vue'
+import UpgradeUploader from '../components/upgrader/UpgradeUploader.vue'
+import UpgradeButton from '../components/upgrader/UpgradeButton.vue'
 import ResolutionSelector from '../components/combiner/ResolutionSelector.vue'
-import { useScalerStore } from '../stores/scaler'
+import { useUpgraderStore } from '../stores/upgrader'
 
-const store = useScalerStore()
+const store = useUpgraderStore()
 </script>
 
 <style scoped>

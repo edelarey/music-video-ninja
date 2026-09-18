@@ -4,6 +4,8 @@ import { toBlobURL } from '@ffmpeg/util'
 const H264_ENCODE = ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23']
 // Keep in sync with PING_PONG_MAX_SOURCE_SECONDS in the editor store
 const PING_PONG_MAX_SOURCE_SECONDS = 15
+// Time-slice length for long-video HD upgrades (keeps WASM MEMFS bounded)
+const UPGRADE_CHUNK_SECONDS = 20
 
 function formatClock(seconds) {
   const s = Math.max(0, Number(seconds) || 0)
@@ -685,6 +687,235 @@ class FFmpegService {
         } catch (e) {
           // Ignore missing files
         }
+      }
+    }
+  }
+
+  /**
+   * Upgrade a single long video to a target resolution while preserving the soundtrack.
+   * Video is encoded in time slices so WASM memory stays bounded; audio is stream-copied
+   * from the source (AAC 320k only if copy is not possible). Differs from scaleVideo,
+   * which is aimed at many short clips and re-encodes audio to 192k AAC.
+   * @param {File} file
+   * @param {number} duration
+   * @param {{ width: number, height: number }} resolution
+   * @param {Function} onProgress
+   * @param {Function} onStatusUpdate
+   * @returns {Promise<{ blob: Blob, audioPreserved: boolean }>}
+   */
+  async upgradeVideo(file, duration, resolution, onProgress, onStatusUpdate) {
+    if (!this.ffmpeg || !this.loaded) {
+      throw new Error('FFmpeg not loaded')
+    }
+
+    const { width, height } = resolution
+    const sourceName = 'upgrade_source.mp4'
+    const audioName = 'upgrade_audio.mp4'
+    const listName = 'upgrade_filelist.txt'
+    const stitchedName = 'upgrade_stitched.mp4'
+    const outputName = 'upgrade_output.mp4'
+    const filesToClean = new Set([sourceName, audioName, listName, stitchedName, outputName])
+    const report = (percent) => {
+      if (onProgress) onProgress(Math.min(100, Math.max(0, Math.round(percent))))
+    }
+
+    try {
+      if (onStatusUpdate) onStatusUpdate('Loading video...')
+      report(2)
+      const data = new Uint8Array(await file.arrayBuffer())
+      await this.ffmpeg.writeFile(sourceName, data)
+
+      const scaleFilter = `scale=${width}:${height}:force_original_aspect_ratio=decrease:flags=lanczos,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p`
+
+      if (onStatusUpdate) onStatusUpdate('Extracting soundtrack...')
+      report(6)
+      let audioPreserved = false
+      try {
+        const copyRes = await this.ffmpeg.exec([
+          '-i', sourceName,
+          '-vn',
+          '-map', '0:a:0',
+          '-c:a', 'copy',
+          audioName
+        ])
+        if (copyRes === 0) {
+          audioPreserved = true
+          if (onStatusUpdate) onStatusUpdate('Soundtrack extracted (original copy)')
+        }
+      } catch (e) {
+        console.warn('[FFmpeg Upgrade] Audio stream copy failed.', e)
+      }
+
+      if (!audioPreserved) {
+        await this.deleteFile(audioName)
+        try {
+          const encRes = await this.ffmpeg.exec([
+            '-i', sourceName,
+            '-vn',
+            '-map', '0:a:0',
+            '-c:a', 'aac',
+            '-b:a', '320k',
+            '-ar', '44100',
+            '-ac', '2',
+            audioName
+          ])
+          if (encRes === 0) {
+            audioPreserved = true
+            if (onStatusUpdate) onStatusUpdate('Soundtrack extracted (AAC 320k)')
+          }
+        } catch (e) {
+          console.warn('[FFmpeg Upgrade] Audio re-encode failed (source may have no track).', e)
+        }
+      }
+
+      if (!audioPreserved && onStatusUpdate) {
+        onStatusUpdate('No soundtrack found — upgrading video only')
+      }
+
+      const safeDuration = Number.isFinite(duration) && duration > 0 ? duration : 0
+      if (safeDuration <= 0) {
+        throw new Error('Could not determine video duration')
+      }
+
+      const chunkCount = Math.max(1, Math.ceil(safeDuration / UPGRADE_CHUNK_SECONDS))
+      let currentStitch = null
+
+      for (let i = 0; i < chunkCount; i++) {
+        const start = i * UPGRADE_CHUNK_SECONDS
+        const remaining = safeDuration - start
+        if (remaining <= 0.05) break
+
+        const chunkDur = Math.min(UPGRADE_CHUNK_SECONDS, remaining)
+        const chunkName = `upgrade_chunk_${i}.mp4`
+        filesToClean.add(chunkName)
+
+        this._mp3Duration = chunkDur
+        this._onProgress = (percent) => {
+          report(8 + ((i + percent / 100) / chunkCount) * 78)
+        }
+
+        if (onStatusUpdate) onStatusUpdate(`Scaling video (${i + 1}/${chunkCount})...`)
+        const scaleRes = await this.ffmpeg.exec([
+          '-ss', start.toFixed(3),
+          '-t', chunkDur.toFixed(3),
+          '-i', sourceName,
+          '-an',
+          '-vf', scaleFilter,
+          ...H264_ENCODE,
+          chunkName
+        ])
+        if (typeof scaleRes === 'number' && scaleRes !== 0) {
+          throw new Error(`Video scale failed on segment ${i + 1}/${chunkCount}`)
+        }
+
+        if (!currentStitch) {
+          currentStitch = chunkName
+        } else {
+          const isLast = start + chunkDur >= safeDuration - 0.05
+          const outName = isLast ? stitchedName : `upgrade_stitch_${i}.mp4`
+          filesToClean.add(outName)
+          const listContent = `file '${currentStitch}'\nfile '${chunkName}'\n`
+          await this.ffmpeg.writeFile(listName, new TextEncoder().encode(listContent))
+          const concatRes = await this.ffmpeg.exec([
+            '-f', 'concat',
+            '-safe', '0',
+            '-i', listName,
+            '-c', 'copy',
+            outName
+          ])
+          if (typeof concatRes === 'number' && concatRes !== 0) {
+            throw new Error('Failed combining upgraded segments')
+          }
+          await this.deleteFiles([currentStitch, chunkName])
+          currentStitch = outName
+        }
+      }
+
+      if (!currentStitch) {
+        throw new Error('No video was produced')
+      }
+
+      if (currentStitch !== stitchedName) {
+        await this.ffmpeg.exec(['-i', currentStitch, '-c', 'copy', stitchedName])
+        await this.deleteFile(currentStitch)
+        currentStitch = stitchedName
+      }
+
+      // Source is no longer needed; drop it before mux so MEMFS can hold the output
+      await this.deleteFile(sourceName)
+      filesToClean.delete(sourceName)
+      report(90)
+
+      if (audioPreserved) {
+        if (onStatusUpdate) onStatusUpdate('Muxing original soundtrack...')
+        let muxed = false
+        try {
+          const copyMux = await this.ffmpeg.exec([
+            '-i', stitchedName,
+            '-i', audioName,
+            '-map', '0:v:0',
+            '-map', '1:a:0',
+            '-c:v', 'copy',
+            '-c:a', 'copy',
+            '-movflags', '+faststart',
+            outputName
+          ])
+          if (copyMux === 0) muxed = true
+        } catch (e) {
+          console.warn('[FFmpeg Upgrade] Stream-copy mux failed, re-encoding audio.', e)
+        }
+
+        if (!muxed) {
+          await this.deleteFile(outputName)
+          const aacMux = await this.ffmpeg.exec([
+            '-i', stitchedName,
+            '-i', audioName,
+            '-map', '0:v:0',
+            '-map', '1:a:0',
+            '-c:v', 'copy',
+            '-c:a', 'aac',
+            '-b:a', '320k',
+            '-ar', '44100',
+            '-ac', '2',
+            '-movflags', '+faststart',
+            outputName
+          ])
+          if (typeof aacMux === 'number' && aacMux !== 0) {
+            throw new Error('Failed muxing soundtrack onto upgraded video')
+          }
+        }
+      } else {
+        if (onStatusUpdate) onStatusUpdate('Finalizing video (no soundtrack)...')
+        const copyRes = await this.ffmpeg.exec([
+          '-i', stitchedName,
+          '-c', 'copy',
+          '-movflags', '+faststart',
+          outputName
+        ])
+        if (typeof copyRes === 'number' && copyRes !== 0) {
+          throw new Error('Failed writing upgraded video')
+        }
+      }
+
+      if (onStatusUpdate) onStatusUpdate('Finalizing...')
+      const output = await this.ffmpeg.readFile(outputName)
+      report(100)
+      if (onStatusUpdate) onStatusUpdate(audioPreserved ? 'Complete — soundtrack preserved' : 'Complete')
+
+      return {
+        blob: new Blob([output.buffer], { type: 'video/mp4' }),
+        audioPreserved
+      }
+    } catch (error) {
+      console.error('FFmpeg upgradeVideo error:', error)
+      this.destroyInstance()
+      throw error
+    } finally {
+      this._mp3Duration = 0
+      this._onProgress = null
+      if (this.loaded) {
+        if (onStatusUpdate) onStatusUpdate('Cleaning up virtual files...')
+        await this.deleteFiles([...filesToClean])
       }
     }
   }

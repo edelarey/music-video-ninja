@@ -1,6 +1,6 @@
 # 🪃 Loop Jitsu
 
-A **100% client-side** Vue 3 video and audio toolkit. Create looped music videos with a custom MP3 soundtrack, stitch clips into one file, batch upscale/downscale videos, or convert WAV to high-quality MP3 — all in the browser with FFmpeg WebAssembly. Nothing is uploaded to a server.
+A **100% client-side** Vue 3 video and audio toolkit. Create looped music videos with a custom MP3 soundtrack, stitch clips into one file, batch upscale/downscale short clips, upgrade a finished video to 1080p while keeping its soundtrack, or convert WAV to high-quality MP3 — all in the browser with FFmpeg WebAssembly. Nothing is uploaded to a server.
 
 ## ✨ Features
 
@@ -21,10 +21,18 @@ A **100% client-side** Vue 3 video and audio toolkit. Create looped music videos
 
 ### Batch Scaler (`/scaler`)
 
-- **📋 Multi-file queue**: Select a list of videos and convert each one independently.
+- **📋 Multi-file queue**: Select a list of **short clips** and convert each one independently.
 - **⬆️⬇️ Up or down**: Upscale 480p/720p to 1080p, or downscale 1080p back to 720p/480p (and other 16:9 sizes).
 - **🖼️ Letterbox**: Non-16:9 sources are padded to the target frame.
 - **📥 Per-file download**: Download each result, or download the whole completed batch.
+- Not for one long finished music video — use **HD Upgrade** when you need to keep that soundtrack.
+
+### HD Upgrade (`/upgrade`)
+
+- **🎬 One long video**: Upgrade a finished music video (for example 720p → 1080p) instead of a batch of short clips.
+- **🔊 Soundtrack preserved**: Original audio is stream-copied when possible; otherwise re-encoded to AAC 320k. Never muted or replaced.
+- **🧠 Memory-safe**: Video is encoded in ~20s slices, then concatenated, so a long file does not exhaust WASM memory.
+- **🖼️ Letterbox**: Non-16:9 sources are padded to the target 16:9 frame.
 
 ### WAV to MP3 (`/wav-to-mp3`)
 
@@ -81,9 +89,17 @@ npm run preview
 
 ### Batch Scaler
 
-1. **Select videos**: Click or drag a list of files into the uploader. Each row shows duration, current size (for example `480p · 854×480`), and whether the conversion is an upscale, downscale, or already at the target.
+1. **Select videos**: Click or drag a list of short clips into the uploader. Each row shows duration, current size (for example `480p · 854×480`), and whether the conversion is an upscale, downscale, or already at the target.
 2. **Choose a target**: Select 144p–1080p. Typical use is 480p/720p → 1080p or the reverse.
 3. **Scale & download**: Click **Scale Videos**. Files are processed one at a time. Download each result, or use **Download all** when the batch finishes. Videos already at the target resolution are copied rather than re-encoded.
+
+For one long finished video (a rendered music video) where you must keep the soundtrack, use **HD Upgrade** instead.
+
+### HD Upgrade
+
+1. **Select one video**: Upload the finished file (MP4, WebM, MOV, AVI, MKV). Preview plays with sound so you can confirm the soundtrack.
+2. **Choose a target**: Default is 1080p. Output is 16:9; other aspect ratios are letterboxed. Pick a size larger than the source (for example 720p → 1080p).
+3. **Upgrade & download**: Click **Upgrade to 1080p**. Keep the tab open. Encoding runs in ~20s slices, then the original audio is muxed back. The upgraded MP4 downloads when it finishes.
 
 ### WAV to MP3
 
@@ -144,11 +160,28 @@ ffmpeg -i stitched.mp4 -i audio.mp3 -map 0:v:0 -map 1:a:0 -c:v copy \
 
 This architecture ensures stability and performance, even when creating long videos from short, looping clips.
 
-### Combiner and Scaler
+### Combiner, Scaler, and HD Upgrade
 
 **Video Combiner** re-encodes each timeline clip to the chosen 16:9 size (scale + pad), muxes original audio (or silence), then concatenates with the concat demuxer.
 
-**Batch Scaler** runs the same scale/pad/mux path on one file at a time so WASM memory stays bounded. Lanczos scaling is used for cleaner upscales. Videos whose width and height already match the target are skipped.
+**Batch Scaler** runs the same scale/pad/mux path on one short file at a time so WASM memory stays bounded. Lanczos scaling is used for cleaner upscales. Videos whose width and height already match the target are skipped. Audio is re-encoded to AAC 192k when present.
+
+**HD Upgrade** is for one long finished video (a rendered music video). Audio is extracted first (stream copy, or AAC 320k if copy is not possible). Video is then scaled in 20-second slices, concatenated with stream copy, and muxed with that soundtrack — never muted or replaced:
+
+```bash
+# 1. Extract soundtrack (copy when possible)
+ffmpeg -i source.mp4 -vn -map 0:a:0 -c:a copy audio.mp4
+
+# 2. Scale each time slice (video only)
+ffmpeg -ss START -t 20 -i source.mp4 -an \
+  -vf "scale=1920:1080:force_original_aspect_ratio=decrease:flags=lanczos,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:color=black,format=yuv420p" \
+  -c:v libx264 -preset ultrafast -crf 23 chunk_N.mp4
+
+# 3. Concat slices, then mux original audio
+ffmpeg -f concat -safe 0 -i filelist.txt -c copy stitched.mp4
+ffmpeg -i stitched.mp4 -i audio.mp4 -map 0:v:0 -map 1:a:0 -c:v copy -c:a copy \
+  -movflags +faststart output.mp4
+```
 
 **WAV to MP3** encodes each file with `libmp3lame` at 320 kbps CBR, 44.1 kHz, stereo:
 
@@ -174,23 +207,28 @@ loop-jitsu/
 │   │   ├── scaler/
 │   │   │   ├── ScalerUploader.vue     # Batch file list
 │   │   │   └── ScaleButton.vue        # Batch scale + download
+│   │   ├── upgrader/
+│   │   │   ├── UpgradeUploader.vue    # Single long-video upload
+│   │   │   └── UpgradeButton.vue      # HD upgrade + download
 │   │   └── converter/
 │   │       ├── WavUploader.vue        # WAV file list
 │   │       └── ConvertButton.vue      # Batch WAV → MP3
 │   ├── const/
 │   │   └── resolutions.ts             # Shared 144p–1080p map
 │   ├── services/
-│   │   ├── ffmpegService.js           # FFmpeg render / combine / scale / convert
+│   │   ├── ffmpegService.js           # FFmpeg render / combine / scale / upgrade / convert
 │   │   └── ffmpegService.d.ts
 │   ├── stores/
 │   │   ├── editor.ts                  # Music video state
 │   │   ├── combiner.ts                # Combiner state
 │   │   ├── scaler.ts                  # Batch scaler state
+│   │   ├── upgrader.ts                # HD upgrade state
 │   │   └── converter.ts               # WAV → MP3 state
 │   ├── views/
 │   │   ├── Home.vue                   # Music video page
 │   │   ├── VideoCombiner.vue          # Combiner page
 │   │   ├── VideoScaler.vue            # Batch scaler page
+│   │   ├── VideoUpgrader.vue          # HD upgrade page
 │   │   ├── WavToMp3.vue               # WAV → MP3 page
 │   │   └── About.vue
 │   ├── router/

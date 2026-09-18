@@ -4,8 +4,9 @@
     <p>
       Loop Jitsu is a client-side video and audio toolkit that runs entirely in your web browser.
       Use it to build looped music videos synced to an MP3, combine clips into one file, batch
-      upscale/downscale videos, or convert WAV files to high-quality MP3s. Because all processing
-      happens on your computer, your files remain private and secure.
+      upscale/downscale short clips, upgrade a finished video to 1080p while keeping its
+      soundtrack, or convert WAV files to high-quality MP3s. Because all processing happens on
+      your computer, your files remain private and secure.
     </p>
 
     <h3>How It Works</h3>
@@ -89,8 +90,10 @@
 
     <h3>Batch Scaler</h3>
     <p>
-      Convert a list of videos to a new resolution without combining them. Use this to upscale
-      480p or 720p footage to 1080p, or to downscale 1080p back down.
+      Convert a list of <strong>short clips</strong> to a new resolution without combining them.
+      Use this to upscale 480p or 720p footage to 1080p, or to downscale 1080p back down. For one
+      long finished music video where you need to keep the soundtrack, use
+      <router-link to="/upgrade" class="inline-link">HD Upgrade</router-link> instead.
     </p>
     <ol>
       <li>
@@ -111,6 +114,37 @@
     </ol>
     <p>
       <router-link to="/scaler" class="inline-link">Open Batch Scaler →</router-link>
+    </p>
+
+    <h3>HD Upgrade</h3>
+    <p>
+      Take <strong>one finished music video</strong> — typically 720p with a mixed soundtrack —
+      and upscale the whole file to 1080p (or another 16:9 size) without replacing or muting the
+      audio. This is the tool to use after you have rendered a music video and want a higher
+      resolution export. It is not a batch tool;
+      <router-link to="/scaler" class="inline-link">Batch Scaler</router-link> is for many short
+      clips.
+    </p>
+    <ol>
+      <li>
+        <strong>Select one video:</strong> Upload the finished file (MP4, WebM, MOV, AVI, MKV).
+        Duration, current size, and file size are shown. Preview plays with sound so you can
+        confirm the soundtrack.
+      </li>
+      <li>
+        <strong>Choose a target:</strong> Default is <strong>1080p</strong>. Output is 16:9;
+        other aspect ratios are letterboxed. Pick a size larger than the source (for example
+        720p → 1080p).
+      </li>
+      <li>
+        <strong>Upgrade:</strong> Click <strong>Upgrade to 1080p</strong>. Video is re-encoded in
+        ~20 second slices so a long file does not exhaust browser memory. The original audio is
+        stream-copied when possible (otherwise AAC 320k). Keep the tab open while it runs. The
+        upgraded MP4 downloads when encoding finishes.
+      </li>
+    </ol>
+    <p>
+      <router-link to="/upgrade" class="inline-link">Open HD Upgrade →</router-link>
     </p>
 
     <h3>WAV to MP3</h3>
