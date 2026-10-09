@@ -160,7 +160,9 @@
       </li>
       <li>
         <strong>Convert:</strong> Click <strong>Convert to MP3</strong>. Files are encoded one at
-        a time. Download each MP3, or use <strong>Download all</strong> when the batch finishes.
+        a time. Leave <strong>Scrub WAV metadata</strong> off to keep the WAV as it is. Turn it on
+        to also download a WAV with metadata tags removed. A file that has no extra metadata still
+        converts. Download each MP3, or use <strong>Download all</strong> when the batch finishes.
       </li>
     </ol>
     <p>

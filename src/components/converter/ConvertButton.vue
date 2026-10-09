@@ -66,7 +66,7 @@
           class="job-download"
           @click="downloadTrack(track)"
         >
-          Download
+          {{ track.wavBlob ? 'MP3 + WAV' : 'Download' }}
         </button>
       </li>
     </ul>
@@ -89,6 +89,7 @@
 import { ref } from 'vue'
 import { useConverterStore, type ConverterTrack } from '../../stores/converter'
 import { ffmpegService } from '@/services/ffmpegService.js'
+import { scrubWavMetadata } from '@/services/wavMetadata.js'
 
 const store = useConverterStore()
 const batchStatus = ref('Preparing...')
@@ -97,22 +98,30 @@ const outputFilename = (name: string): string => {
   return name.replace(/\.(wav|wave)$/i, '') + '.mp3'
 }
 
-const downloadTrack = (track: ConverterTrack) => {
-  if (!track.outputBlob) return
-  const url = URL.createObjectURL(track.outputBlob)
+const downloadBlob = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = outputFilename(track.name)
+  a.download = filename
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
 }
 
+const downloadTrack = async (track: ConverterTrack) => {
+  if (!track.outputBlob) return
+  downloadBlob(track.outputBlob, outputFilename(track.name))
+  if (track.wavBlob) {
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    downloadBlob(track.wavBlob, track.name)
+  }
+}
+
 const downloadAll = async () => {
   for (const track of store.tracks) {
     if (track.outputBlob && track.status === 'complete') {
-      downloadTrack(track)
+      await downloadTrack(track)
       await new Promise((resolve) => setTimeout(resolve, 350))
     }
   }
@@ -123,7 +132,7 @@ const statusLabel = (track: ConverterTrack): string => {
   if (track.status === 'processing') {
     return track.statusText ? `${track.statusText} (${track.progress}%)` : `${track.progress}%`
   }
-  if (track.status === 'complete') return 'Complete'
+  if (track.status === 'complete') return track.wavBlob ? 'Complete · MP3 and WAV' : 'Complete'
   return track.error || 'Failed'
 }
 
@@ -153,6 +162,14 @@ const handleConvert = async () => {
       })
 
       try {
+        let wavBlob: Blob | undefined
+        if (store.scrubWav) {
+          store.updateTrack(track.id, { statusText: 'Scrubbing WAV metadata...' })
+          batchStatus.value = `File ${i + 1}/${queue.length}: Scrubbing WAV metadata...`
+          const cleaned = scrubWavMetadata(new Uint8Array(await track.file.arrayBuffer()))
+          wavBlob = new Blob([cleaned], { type: 'audio/wav' })
+        }
+
         const blob = await ffmpegService.convertWavToMp3(
           track.file,
           track.duration,
@@ -169,8 +186,13 @@ const handleConvert = async () => {
           status: 'complete',
           progress: 100,
           statusText: 'Complete',
-          outputBlob: blob
+          outputBlob: blob,
+          wavBlob
         })
+
+        if (wavBlob) {
+          await downloadTrack({ ...track, outputBlob: blob, wavBlob })
+        }
       } catch (error) {
         console.error(`Convert error for ${track.name}:`, error)
         const message = error instanceof Error ? error.message : 'Convert failed'

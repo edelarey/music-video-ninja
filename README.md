@@ -104,8 +104,8 @@ For one long finished video (a rendered music video) where you must keep the sou
 ### WAV to MP3
 
 1. **Select WAV files**: Click or drag one or more `.wav` files into the uploader.
-2. **Convert**: Click **Convert to MP3**. Each file is encoded to `libmp3lame` 320 kbps / 44.1 kHz stereo.
-3. **Download**: Save each MP3, or use **Download all** when the batch finishes.
+2. **Convert**: Click **Convert to MP3**. Each file is encoded to `libmp3lame` 320 kbps / 44.1 kHz stereo. **Scrub WAV metadata** is off by default and leaves the WAV alone. Turn it on to also download a WAV with metadata tags removed. A WAV with no extra metadata still converts.
+3. **Download**: Save each MP3, or use **Download all** when the batch finishes. With scrubbing on, each finished file also downloads the scrubbed WAV.
 
 ## 🏗️ Technical Architecture
 

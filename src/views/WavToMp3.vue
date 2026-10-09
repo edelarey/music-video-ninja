@@ -21,6 +21,18 @@
           <li><strong>Channels:</strong> stereo</li>
           <li><strong>Tags:</strong> source metadata is not copied</li>
         </ul>
+        <label class="scrub-option" :class="{ disabled: store.isProcessing }">
+          <input
+            type="checkbox"
+            v-model="store.scrubWav"
+            :disabled="store.isProcessing"
+          />
+          <span>Scrub WAV metadata</span>
+        </label>
+        <p class="scrub-hint">
+          When this is on, conversion also downloads a WAV with comment and other metadata tags removed.
+          The original file is left as it is. A WAV with no extra metadata still converts.
+        </p>
       </div>
     </section>
 
@@ -34,6 +46,9 @@
 <script setup lang="ts">
 import WavUploader from '../components/converter/WavUploader.vue'
 import ConvertButton from '../components/converter/ConvertButton.vue'
+import { useConverterStore } from '../stores/converter'
+
+const store = useConverterStore()
 </script>
 
 <style scoped>
@@ -81,10 +96,41 @@ import ConvertButton from '../components/converter/ConvertButton.vue'
 }
 
 .settings-list {
-  margin: 0;
+  margin: 0 0 1rem 0;
   padding-left: 1.25rem;
   color: #666;
   line-height: 1.7;
+}
+
+.scrub-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #213547;
+  cursor: pointer;
+  user-select: none;
+}
+
+.scrub-option.disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.scrub-option input {
+  cursor: pointer;
+}
+
+.scrub-option.disabled input {
+  cursor: not-allowed;
+}
+
+.scrub-hint {
+  margin: 0.4rem 0 0 1.5rem;
+  color: #666;
+  font-size: 0.85rem;
+  line-height: 1.5;
 }
 
 .render-section h2 {
@@ -107,8 +153,13 @@ import ConvertButton from '../components/converter/ConvertButton.vue'
   }
 
   .settings-copy,
-  .settings-list {
+  .settings-list,
+  .scrub-hint {
     color: #aaa;
+  }
+
+  .scrub-option {
+    color: #fff;
   }
 
   .command {

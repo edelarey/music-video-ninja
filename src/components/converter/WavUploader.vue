@@ -66,7 +66,7 @@
               v-if="track.outputBlob && track.status === 'complete'"
               @click.stop="downloadTrack(track)"
               class="download-btn"
-              title="Download MP3"
+              :title="track.wavBlob ? 'Download MP3 and scrubbed WAV' : 'Download MP3'"
             >
               ↓
             </button>
@@ -186,16 +186,24 @@ const outputFilename = (name: string): string => {
   return name.replace(/\.(wav|wave)$/i, '') + '.mp3'
 }
 
-const downloadTrack = (track: ConverterTrack) => {
-  if (!track.outputBlob) return
-  const url = URL.createObjectURL(track.outputBlob)
+const downloadBlob = (blob: Blob, filename: string) => {
+  const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = outputFilename(track.name)
+  a.download = filename
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
+}
+
+const downloadTrack = async (track: ConverterTrack) => {
+  if (!track.outputBlob) return
+  downloadBlob(track.outputBlob, outputFilename(track.name))
+  if (track.wavBlob) {
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    downloadBlob(track.wavBlob, track.name)
+  }
 }
 
 onUnmounted(() => {

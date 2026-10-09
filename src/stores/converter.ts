@@ -14,6 +14,7 @@ export interface ConverterTrack {
   statusText: string
   error?: string
   outputBlob?: Blob
+  wavBlob?: Blob
 }
 
 const CLIP_COLORS = [
@@ -27,6 +28,7 @@ export const useConverterStore = defineStore('converter', () => {
   const tracks = ref<ConverterTrack[]>([])
   const isProcessing = ref(false)
   const currentTrackId = ref<string | null>(null)
+  const scrubWav = ref(false)
 
   const hasTracks = computed(() => tracks.value.length > 0)
   const canConvert = computed(() => hasTracks.value && !isProcessing.value)
@@ -84,6 +86,7 @@ export const useConverterStore = defineStore('converter', () => {
       track.statusText = ''
       track.error = undefined
       track.outputBlob = undefined
+      track.wavBlob = undefined
     })
   }
 
@@ -97,6 +100,7 @@ export const useConverterStore = defineStore('converter', () => {
     tracks,
     isProcessing,
     currentTrackId,
+    scrubWav,
     hasTracks,
     canConvert,
     completedCount,
