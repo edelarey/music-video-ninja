@@ -4,6 +4,27 @@ import { toBlobURL } from '@ffmpeg/util'
 const H264_ENCODE = ['-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '23']
 // Keep in sync with PING_PONG_MAX_SOURCE_SECONDS in the editor store
 const PING_PONG_MAX_SOURCE_SECONDS = 15
+// @ffmpeg/core-mt 0.12.x pre-creates 32 pthread workers and cannot grow that
+// pool during exec(). Decoder, filter graph, and libx264 each size themselves
+// from navigator.hardwareConcurrency. On 9+ cores those three pools together
+// pass 32 and the encode deadlocks on the first frame: progress stays at 0%
+// and exec() never rejects. Cap every stage so one scale stays inside the pool.
+const WASM_ENCODE_THREADS = 4
+
+function encodeThreadCount() {
+  const cores = typeof navigator !== 'undefined' ? Number(navigator.hardwareConcurrency) : WASM_ENCODE_THREADS
+  if (!Number.isFinite(cores) || cores < 1) return 1
+  return Math.min(WASM_ENCODE_THREADS, Math.floor(cores))
+}
+
+function inputThreadArgs() {
+  const n = String(encodeThreadCount())
+  return ['-threads', n, '-filter_threads', n, '-filter_complex_threads', n]
+}
+
+function outputThreadArgs() {
+  return ['-threads', String(encodeThreadCount())]
+}
 // Time-slice length for long-video HD upgrades (keeps WASM MEMFS bounded)
 const UPGRADE_CHUNK_SECONDS = 20
 
@@ -194,10 +215,12 @@ class FFmpegService {
           // 1. Pre-process: Scale and mute the *short* source clip.
           if (onStatusUpdate) onStatusUpdate(`Pre-processing ${clipLabel(clip, i)}...`)
           await this.ffmpeg.exec([
+            ...inputThreadArgs(),
             '-i', sourceClipName,
             '-an',
             '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p',
             ...H264_ENCODE,
+            ...outputThreadArgs(),
             processedClipName
           ])
 
@@ -209,10 +232,12 @@ class FFmpegService {
             if (onStatusUpdate) onStatusUpdate(`Creating reverse loop for ${clipLabel(clip, i)}...`)
             try {
               await this.ffmpeg.exec([
+                ...inputThreadArgs(),
                 '-i', processedClipName,
                 '-vf', 'reverse',
                 '-an',
                 ...H264_ENCODE,
+                ...outputThreadArgs(),
                 reversedClipName
               ])
             } catch (error) {
@@ -409,12 +434,14 @@ class FFmpegService {
         // Pass 1: Video Only (Resize/Pad) - Isolated to prevent hanging
         if (onStatusUpdate) onStatusUpdate(`Encoding Video ${i + 1}/${validClips.length}...`)
         await this.ffmpeg.exec([
+          ...inputThreadArgs(),
           '-i', sourceClipName,
           '-vf', scaleFilter,
           '-an', // No Audio
           '-c:v', 'libx264',
           '-preset', 'ultrafast',
           '-crf', '23',
+          ...outputThreadArgs(),
           videoTemp
         ])
 
@@ -556,12 +583,14 @@ class FFmpegService {
 
       if (onStatusUpdate) onStatusUpdate('Scaling video...')
       await this.ffmpeg.exec([
+        ...inputThreadArgs(),
         '-i', sourceName,
         '-vf', scaleFilter,
         '-an',
         '-c:v', 'libx264',
         '-preset', 'ultrafast',
         '-crf', '23',
+        ...outputThreadArgs(),
         videoTemp
       ])
 
@@ -570,6 +599,7 @@ class FFmpegService {
       let muxSuccess = false
       try {
         const res = await this.ffmpeg.exec([
+          ...inputThreadArgs(),
           '-i', videoTemp,
           '-i', sourceName,
           '-map', '0:v:0',
@@ -581,6 +611,7 @@ class FFmpegService {
           '-ar', '44100',
           '-shortest',
           '-movflags', '+faststart',
+          ...outputThreadArgs(),
           outputName
         ])
         if (res === 0) muxSuccess = true
@@ -591,6 +622,7 @@ class FFmpegService {
       if (!muxSuccess) {
         if (onStatusUpdate) onStatusUpdate('Adding silent audio...')
         await this.ffmpeg.exec([
+          ...inputThreadArgs(),
           '-i', videoTemp,
           '-f', 'lavfi',
           '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
@@ -601,6 +633,7 @@ class FFmpegService {
           '-b:a', '192k',
           '-shortest',
           '-movflags', '+faststart',
+          ...outputThreadArgs(),
           outputName
         ])
       }
@@ -796,12 +829,14 @@ class FFmpegService {
 
         if (onStatusUpdate) onStatusUpdate(`Scaling video (${i + 1}/${chunkCount})...`)
         const scaleRes = await this.ffmpeg.exec([
+          ...inputThreadArgs(),
           '-ss', start.toFixed(3),
           '-t', chunkDur.toFixed(3),
           '-i', sourceName,
           '-an',
           '-vf', scaleFilter,
           ...H264_ENCODE,
+          ...outputThreadArgs(),
           chunkName
         ])
         if (typeof scaleRes === 'number' && scaleRes !== 0) {
