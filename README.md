@@ -37,7 +37,7 @@ A **100% client-side** Vue 3 video and audio toolkit. Create looped music videos
 ### WAV to MP3 (`/wav-to-mp3`)
 
 - **🎵 Batch convert**: Select one or more `.wav` files and encode each independently.
-- **💎 High quality**: `libmp3lame` at **320 kbps CBR**, **44.1 kHz**, stereo — the same settings as `ffmpeg -i input.wav -c:a libmp3lame -b:a 320k -ar 44100 -ac 2 output.mp3`.
+- **💎 High quality**: `libmp3lame` at **320 kbps CBR**, **44.1 kHz**, stereo — the same settings as `ffmpeg -i input.wav -map_metadata -1 -c:a libmp3lame -b:a 320k -ar 44100 -ac 2 output.mp3`. Source tags are not copied.
 - **📥 Per-file download**: Download each MP3, or download the whole completed batch.
 
 Shared across every tool:
@@ -186,7 +186,7 @@ ffmpeg -i stitched.mp4 -i audio.mp4 -map 0:v:0 -map 1:a:0 -c:v copy -c:a copy \
 **WAV to MP3** encodes each file with `libmp3lame` at 320 kbps CBR, 44.1 kHz, stereo:
 
 ```bash
-ffmpeg -i input.wav -c:a libmp3lame -b:a 320k -ar 44100 -ac 2 output.mp3
+ffmpeg -i input.wav -map_metadata -1 -c:a libmp3lame -b:a 320k -ar 44100 -ac 2 output.mp3
 ```
 
 ### Project Structure

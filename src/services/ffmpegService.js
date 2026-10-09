@@ -663,7 +663,8 @@ class FFmpegService {
 
   /**
    * Convert a WAV file to a high-quality MP3.
-   * Matches: ffmpeg -i input.wav -c:a libmp3lame -b:a 320k -ar 44100 -ac 2 output.mp3
+   * Matches: ffmpeg -i input.wav -map_metadata -1 -c:a libmp3lame -b:a 320k -ar 44100 -ac 2 output.mp3
+   * Source tags, including a WAV comment, are not copied into the MP3.
    * @param {File} file - Source WAV file
    * @param {number} duration - Source duration in seconds
    * @param {Function} onProgress - Progress callback (percentage)
@@ -690,6 +691,8 @@ class FFmpegService {
       if (onStatusUpdate) onStatusUpdate('Encoding MP3 (320 kbps)...')
       const result = await this.ffmpeg.exec([
         '-i', sourceName,
+        '-map_metadata', '-1',
+        '-map_metadata:s:a', '-1',
         '-c:a', 'libmp3lame',
         '-b:a', '320k',
         '-ar', '44100',

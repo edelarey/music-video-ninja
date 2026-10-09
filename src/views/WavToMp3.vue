@@ -13,12 +13,13 @@
         <p class="settings-copy">
           Each file is converted independently to a high-quality MP3 using the same settings as:
         </p>
-        <pre class="command">ffmpeg -i input.wav -c:a libmp3lame -b:a 320k -ar 44100 -ac 2 output.mp3</pre>
+        <pre class="command">ffmpeg -i input.wav -map_metadata -1 -c:a libmp3lame -b:a 320k -ar 44100 -ac 2 output.mp3</pre>
         <ul class="settings-list">
           <li><strong>Codec:</strong> libmp3lame</li>
           <li><strong>Bitrate:</strong> 320 kbps CBR</li>
           <li><strong>Sample rate:</strong> 44.1 kHz</li>
           <li><strong>Channels:</strong> stereo</li>
+          <li><strong>Tags:</strong> source metadata is not copied</li>
         </ul>
       </div>
     </section>
