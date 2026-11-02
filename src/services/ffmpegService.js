@@ -131,14 +131,16 @@ class FFmpegService {
     console.log('Loading FFmpeg with @ffmpeg/core-mt...')
 
     try {
-      const baseURL = 'https://unpkg.com/@ffmpeg/core-mt@0.12.6/dist/esm'
+      // Load the ESM core from same-origin /ffmpeg (copied from
+      // @ffmpeg/core-mt/dist/esm). The @ffmpeg/ffmpeg class worker is
+      // type=module, so it import()s core and needs `export default`.
+      // Vite must not rewrite these files: a transformed module blob fed to
+      // classic pthread workers throws "Cannot use import statement outside a module".
+      const base = new URL(`${import.meta.env.BASE_URL}ffmpeg/`, self.location.origin).href
       await this.ffmpeg.load({
-        coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-        wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-        workerURL: await toBlobURL(`${baseURL}/ffmpeg-core.worker.js`, 'text/javascript'),
-      }, {
-        // Enable multi-threading
-        pthreads: navigator.hardwareConcurrency,
+        coreURL: await toBlobURL(`${base}ffmpeg-core.js`, 'text/javascript'),
+        wasmURL: await toBlobURL(`${base}ffmpeg-core.wasm`, 'application/wasm'),
+        workerURL: await toBlobURL(`${base}ffmpeg-core.worker.js`, 'text/javascript'),
       })
       console.log('FFmpeg loaded successfully!')
     } catch (error) {

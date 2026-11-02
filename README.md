@@ -37,7 +37,7 @@ A **100% client-side** Vue 3 video and audio toolkit. Create looped music videos
 ### WAV to MP3 (`/wav-to-mp3`)
 
 - **🎵 Batch convert**: Select one or more `.wav` files and encode each independently.
-- **💎 High quality**: `libmp3lame` at **320 kbps CBR**, **44.1 kHz**, stereo — the same settings as `ffmpeg -i input.wav -map_metadata -1 -c:a libmp3lame -b:a 320k -ar 44100 -ac 2 output.mp3`. Source tags are not copied.
+- **💎 High quality**: `libmp3lame` at **320 kbps CBR**, **44.1 kHz**, stereo — the same settings as `ffmpeg -i input.wav -map_metadata -1 -map_metadata:s:a -1 -c:a libmp3lame -b:a 320k -ar 44100 -ac 2 output.mp3`. Source tags are not copied.
 - **📥 Per-file download**: Download each MP3, or download the whole completed batch.
 
 Shared across every tool:
@@ -51,6 +51,7 @@ Shared across every tool:
 
 - Node.js 20.x or higher
 - npm or yarn
+- No system `ffmpeg` binary. Encoding uses FFmpeg.wasm (`@ffmpeg/ffmpeg` + `@ffmpeg/core-mt`), copied from `node_modules` at dev/build time.
 
 ### Installation
 
@@ -116,7 +117,22 @@ For one long finished video (a rendered music video) where you must keep the sou
 - **Vite** - Fast build tool and dev server
 - **Pinia** - State management
 - **Wavesurfer.js** - Interactive waveform visualization (music video editor)
-- **FFmpeg.wasm** - Client-side video processing via `@ffmpeg/ffmpeg`
+- **FFmpeg.wasm** - Client-side video processing via `@ffmpeg/ffmpeg` and `@ffmpeg/core-mt`
+
+### FFmpeg.wasm core
+
+The first Convert / Render / Scale / Combine / Upgrade click loads FFmpeg in the browser. Core files are **same-origin**, not unpkg or another CDN:
+
+- `ffmpeg-core.js`, `ffmpeg-core.wasm` (~32MB), and `ffmpeg-core.worker.js` from `@ffmpeg/core-mt/dist/esm`
+- Vite copies them to `public/ffmpeg` on `npm start` / `npm run build` (`public/ffmpeg` is gitignored)
+- The dev server also serves `/ffmpeg/*` straight from `node_modules` so a stale SPA fallback cannot replace the wasm with `index.html`
+- `ffmpegService.load()` fetches those URLs and passes blob URLs into `ffmpeg.load()`
+
+Use the **ESM** core (with `export default`). `@ffmpeg/ffmpeg`'s class worker is `type=module` and loads core with `import()`. The UMD build has no default export, and feeding a Vite-transformed module into classic pthread workers throws `Cannot use import statement outside a module`.
+
+Video encodes cap decoder, filter, and libx264 at **4 threads**. `@ffmpeg/core-mt` 0.12.x pre-creates 32 pthread workers and cannot grow that pool. On machines with 9 or more cores, uncapped libx264 + filters can deadlock with progress stuck at 0%. Concat and stream-copy steps stay uncapped.
+
+Production hosts must send the same COOP/COEP headers as `vite.config.ts` (`Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Embedder-Policy: require-corp`) so `SharedArrayBuffer` is available.
 
 ### The FFmpeg Rendering Pipeline
 
@@ -186,7 +202,7 @@ ffmpeg -i stitched.mp4 -i audio.mp4 -map 0:v:0 -map 1:a:0 -c:v copy -c:a copy \
 **WAV to MP3** encodes each file with `libmp3lame` at 320 kbps CBR, 44.1 kHz, stereo:
 
 ```bash
-ffmpeg -i input.wav -map_metadata -1 -c:a libmp3lame -b:a 320k -ar 44100 -ac 2 output.mp3
+ffmpeg -i input.wav -map_metadata -1 -map_metadata:s:a -1 -c:a libmp3lame -b:a 320k -ar 44100 -ac 2 output.mp3
 ```
 
 ### Project Structure
@@ -217,7 +233,8 @@ loop-jitsu/
 │   │   └── resolutions.ts             # Shared 144p–1080p map
 │   ├── services/
 │   │   ├── ffmpegService.js           # FFmpeg render / combine / scale / upgrade / convert
-│   │   └── ffmpegService.d.ts
+│   │   ├── ffmpegService.d.ts
+│   │   └── wavMetadata.js             # Optional WAV chunk scrubber
 │   ├── stores/
 │   │   ├── editor.ts                  # Music video state
 │   │   ├── combiner.ts                # Combiner state
@@ -236,16 +253,22 @@ loop-jitsu/
 │   ├── App.vue
 │   ├── main.ts
 │   └── style.css
-├── vite.config.ts
+├── vite.config.ts                     # COOP/COEP + copy/serve FFmpeg core
 └── package.json
 ```
 
+`public/ffmpeg` is generated from `@ffmpeg/core-mt` and is gitignored. After `npm install`, `npm start` or `npm run build` creates it.
+
 ## ⚠️ Browser Requirements
 
-This application relies on `SharedArrayBuffer` for multi-threaded FFmpeg performance. This requires specific HTTP headers to be served. The included `vite.config.ts` handles this automatically for development and preview servers.
+Multi-threaded FFmpeg.wasm needs `SharedArrayBuffer`, which requires cross-origin isolation. `vite.config.ts` sends these headers on the dev and preview servers; production must send them too:
+
+- `Cross-Origin-Opener-Policy: same-origin`
+- `Cross-Origin-Embedder-Policy: require-corp`
+
+FFmpeg core is served from the **same origin** at `/ffmpeg/` (see above), so it no longer depends on unpkg. The first encode in a session loads about 32MB of wasm.
 
 - **Supported Browsers**: Chrome/Edge 92+, Firefox 89+
-- **Incompatible Browsers**: Safari (does not support `SharedArrayBuffer` in workers from different origins, which affects the CDN-based FFmpeg core).
 - **RAM**: A minimum of 8GB RAM is recommended for smooth processing.
 
 ## 📝 License
