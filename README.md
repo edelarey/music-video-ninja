@@ -1,6 +1,6 @@
 # 🪃 Loop Jitsu
 
-A **100% client-side** Vue 3 video and audio toolkit. Create looped music videos with a custom MP3 soundtrack, stitch clips into one file, batch upscale/downscale short clips, upgrade a finished video to 1080p while keeping its soundtrack, or convert WAV to high-quality MP3 — all in the browser with FFmpeg WebAssembly. Nothing is uploaded to a server.
+A **100% client-side** Vue 3 video and audio toolkit. Create looped music videos with a custom MP3 soundtrack, stitch clips into one file, batch upscale/downscale short clips, upgrade a finished video to 1080p while keeping its soundtrack, retune a WAV from 440 Hz onto 432.081 Hz with optional harmonic layers, or convert WAV to high-quality MP3 — all in the browser. Nothing is uploaded to a server.
 
 ## ✨ Features
 
@@ -33,6 +33,13 @@ A **100% client-side** Vue 3 video and audio toolkit. Create looped music videos
 - **🔊 Soundtrack preserved**: Original audio is stream-copied when possible; otherwise re-encoded to AAC 320k. Never muted or replaced.
 - **🧠 Memory-safe**: Video is encoded in ~20s slices, then concatenated, so a long file does not exhaust WASM memory.
 - **🖼️ Letterbox**: Non-16:9 sources are padded to the target 16:9 frame.
+
+### 432 Retune (`/harmonic`)
+
+- **🎵 WAV in, WAV out:** Upload one uncompressed `.wav`. Downloads stay `.wav` at the file's own sample rate. MP3 encoding stays on **WAV to MP3**.
+- **🎚️ Three versions:** Render any combination — or all three — of a Precise Temperament retune to A4 = 432.081 Hz (−31.44 cents, tempo locked by default), a diffused 528.099 Hz quarter-tone shimmer, and a just-ratio chakra drone on the detected tonic.
+- **🎹 Key:** Krumhansl–Schmuckler detection from pitch-class chroma, with a manual tonic/mode override. C is Root through B is Crown; accidentals are the bridges between centres.
+- **🧵 Worker DSP:** Kaiser-sinc pitch shift plus a small waveform-locked time correction. Peaks are held to −1 dBFS and loudness is matched to the source.
 
 ### WAV to MP3 (`/wav-to-mp3`)
 
@@ -101,6 +108,12 @@ For one long finished video (a rendered music video) where you must keep the sou
 1. **Select one video**: Upload the finished file (MP4, WebM, MOV, AVI, MKV). Preview plays with sound so you can confirm the soundtrack.
 2. **Choose a target**: Default is 1080p. Output is 16:9; other aspect ratios are letterboxed. Pick a size larger than the source (for example 720p → 1080p).
 3. **Upgrade & download**: Click **Upgrade to 1080p**. Keep the tab open. Encoding runs in ~20s slices, then the original audio is muxed back. The upgraded MP4 downloads when it finishes.
+
+### 432 Retune
+
+1. **Upload one WAV:** Click or drag an uncompressed `.wav`. The page shows its real sample rate and reads the key.
+2. **Choose versions:** Tick any combination, or All 3. Tempo-locked pitch shift is the default; Advanced timing can switch to tape varispeed.
+3. **Render:** Preview the original beside each result, then download. Filenames end in `_432Hz_PTT.wav`, `_432_528_shimmer.wav`, and `_432_chakra_drone.wav`. For MP3s, open **WAV to MP3** and drop those files in.
 
 ### WAV to MP3
 
@@ -226,27 +239,35 @@ loop-jitsu/
 │   │   ├── upgrader/
 │   │   │   ├── UpgradeUploader.vue    # Single long-video upload
 │   │   │   └── UpgradeButton.vue      # HD upgrade + download
-│   │   └── converter/
-│   │       ├── WavUploader.vue        # WAV file list
-│   │       └── ConvertButton.vue      # Batch WAV → MP3
+│   │   ├── converter/
+│   │   │   ├── WavUploader.vue        # WAV file list
+│   │   │   └── ConvertButton.vue      # Batch WAV → MP3
+│   │   └── harmonic/
+│   │       ├── HarmonicUploader.vue   # Single WAV upload
+│   │       ├── VersionPicker.vue      # The three retune versions
+│   │       ├── KeyPanel.vue           # Key, chakra wheel, drone recipe
+│   │       └── HarmonicRender.vue     # Render, preview, download
 │   ├── const/
 │   │   └── resolutions.ts             # Shared 144p–1080p map
 │   ├── services/
 │   │   ├── ffmpegService.js           # FFmpeg render / combine / scale / upgrade / convert
 │   │   ├── ffmpegService.d.ts
-│   │   └── wavMetadata.js             # Optional WAV chunk scrubber
+│   │   ├── wavMetadata.js             # Optional WAV chunk scrubber
+│   │   └── harmonic/                  # Worker DSP for the 432 retune
 │   ├── stores/
 │   │   ├── editor.ts                  # Music video state
 │   │   ├── combiner.ts                # Combiner state
 │   │   ├── scaler.ts                  # Batch scaler state
 │   │   ├── upgrader.ts                # HD upgrade state
-│   │   └── converter.ts               # WAV → MP3 state
+│   │   ├── converter.ts               # WAV → MP3 state
+│   │   └── harmonic.ts                # 432 retune state
 │   ├── views/
 │   │   ├── Home.vue                   # Music video page
 │   │   ├── VideoCombiner.vue          # Combiner page
 │   │   ├── VideoScaler.vue            # Batch scaler page
 │   │   ├── VideoUpgrader.vue          # HD upgrade page
 │   │   ├── WavToMp3.vue               # WAV → MP3 page
+│   │   ├── HarmonicEngine.vue         # 432 Hz retune page
 │   │   └── About.vue
 │   ├── router/
 │   │   └── index.ts

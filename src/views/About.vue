@@ -5,7 +5,8 @@
       Loop Jitsu is a client-side video and audio toolkit that runs entirely in your web browser.
       Use it to build looped music videos synced to an MP3, combine clips into one file, batch
       upscale/downscale short clips, upgrade a finished video to 1080p while keeping its
-      soundtrack, or convert WAV files to high-quality MP3s. Because all processing happens on
+      soundtrack, retune a WAV onto 432.081 Hz with optional harmonic layers, or convert
+      WAV files to high-quality MP3s. Because all processing happens on
       your computer, your files remain private and secure.
     </p>
 
@@ -145,6 +146,30 @@
     </ol>
     <p>
       <router-link to="/upgrade" class="inline-link">Open HD Upgrade →</router-link>
+    </p>
+
+    <h3>432 Retune</h3>
+    <p>
+      Retune an uncompressed WAV from concert A4 = 440 Hz onto Robert Edward Grant's Precise
+      Temperament at A4 = 432.081 Hz. Render any combination of three versions: the retune
+      itself, a diffused 528.099 Hz quarter-tone shimmer, and a chakra drone in just ratios
+      on the key detected from the file. Output stays WAV, at the source sample rate.
+      MP3 encoding stays on the converter.
+    </p>
+    <ol>
+      <li>
+        <strong>Upload one WAV</strong> and choose one, two, or all three versions.
+      </li>
+      <li>
+        <strong>Check the detected key</strong> and override the tonic if you want a different drone.
+      </li>
+      <li>
+        <strong>Render.</strong> Preview each WAV, then download. When you want MP3s, open
+        <router-link to="/wav-to-mp3" class="inline-link">WAV to MP3</router-link>.
+      </li>
+    </ol>
+    <p>
+      <router-link to="/harmonic" class="inline-link">Open 432 Retune →</router-link>
     </p>
 
     <h3>WAV to MP3</h3>
