@@ -13,6 +13,11 @@
         <p class="settings-copy">
           Each file is converted independently to a high-quality MP3 using the same settings as:
         </p>
+        <p class="settings-copy">
+          Retuned something first? The
+          <router-link to="/harmonic">432 Retune</router-link>
+          page exports WAVs you can drop here.
+        </p>
         <pre class="command">ffmpeg -i input.wav -map_metadata -1 -c:a libmp3lame -b:a 320k -ar 44100 -ac 2 output.mp3</pre>
         <ul class="settings-list">
           <li><strong>Codec:</strong> libmp3lame</li>
@@ -82,6 +87,11 @@ const store = useConverterStore()
   margin: 0 0 0.75rem 0;
   color: #666;
   line-height: 1.6;
+}
+
+.settings-copy a {
+  color: #646cff;
+  font-weight: 600;
 }
 
 .command {

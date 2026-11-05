@@ -8,6 +8,7 @@
         <router-link to="/combiner" class="nav-link">Video Combiner</router-link>
         <router-link to="/scaler" class="nav-link">Batch Scaler</router-link>
         <router-link to="/upgrade" class="nav-link">HD Upgrade</router-link>
+        <router-link to="/harmonic" class="nav-link">432 Retune</router-link>
         <router-link to="/wav-to-mp3" class="nav-link">WAV to MP3</router-link>
         <router-link to="/about" class="nav-link">About</router-link>
       </nav>
@@ -17,7 +18,7 @@
 
     <footer class="footer">
       <p>
-        100% Client-side • Powered by FFmpeg.wasm & Wavesurfer.js
+        100% Client-side • Powered by FFmpeg.wasm, Wavesurfer.js & Web Worker DSP
       </p>
     </footer>
   </div>

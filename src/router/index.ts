@@ -5,6 +5,7 @@ import VideoCombiner from '../views/VideoCombiner.vue'
 import VideoScaler from '../views/VideoScaler.vue'
 import VideoUpgrader from '../views/VideoUpgrader.vue'
 import WavToMp3 from '../views/WavToMp3.vue'
+import HarmonicEngine from '../views/HarmonicEngine.vue'
 
 const routes = [
   {
@@ -26,6 +27,11 @@ const routes = [
     path: '/upgrade',
     name: 'VideoUpgrader',
     component: VideoUpgrader
+  },
+  {
+    path: '/harmonic',
+    name: 'HarmonicEngine',
+    component: HarmonicEngine
   },
   {
     path: '/wav-to-mp3',
